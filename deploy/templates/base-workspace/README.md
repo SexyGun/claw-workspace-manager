@@ -1,3 +1,3 @@
-# Base Workspace Template
+# 基础工作区模板
 
-Files placed here are copied into each newly created workspace.
+这里的文件会在创建新工作区时复制进去。

@@ -21,16 +21,16 @@ def get_workspace_profiles(settings: Settings) -> dict[str, WorkspaceProfile]:
     return {
         WORKSPACE_TYPE_BASE: WorkspaceProfile(
             key=WORKSPACE_TYPE_BASE,
-            label="Base Workspace",
-            description="Nanobot and gateway workspace",
+            label="基础工作区",
+            description="包含 Nanobot 与 Gateway 的标准工作区",
             template_version="base-workspace-v1",
             template_root=settings.workspace_template_root,
             runtime_kind="gateway",
         ),
         WORKSPACE_TYPE_OPENCLAW: WorkspaceProfile(
             key=WORKSPACE_TYPE_OPENCLAW,
-            label="OpenClaw Workspace",
-            description="OpenClaw workspace with dedicated runtime container",
+            label="OpenClaw 工作区",
+            description="带独立运行容器的 OpenClaw 工作区",
             template_version="openclaw-workspace-v1",
             template_root=settings.openclaw_workspace_template_root,
             runtime_kind="openclaw",

@@ -4,37 +4,37 @@
       <n-card :bordered="false">
         <n-space justify="space-between" align="center">
           <div>
-            <h2>Users</h2>
-            <n-text depth="3">Admin-managed local accounts for workspace access.</n-text>
+            <h2>用户管理</h2>
+            <n-text depth="3">由管理员维护本地账号，用于访问工作区。</n-text>
           </div>
-          <n-button type="primary" @click="showCreate = true">Create User</n-button>
+          <n-button type="primary" @click="showCreate = true">新建用户</n-button>
         </n-space>
       </n-card>
 
       <n-data-table :columns="columns" :data="users" :loading="loading" :pagination="false" />
     </n-space>
 
-    <n-modal v-model:show="showCreate" preset="card" title="Create user" style="width: 420px">
+    <n-modal v-model:show="showCreate" preset="card" title="新建用户" style="width: 420px">
       <n-form :model="createForm">
-        <n-form-item label="Username">
+        <n-form-item label="用户名">
           <n-input v-model:value="createForm.username" />
         </n-form-item>
-        <n-form-item label="Password">
+        <n-form-item label="密码">
           <n-input v-model:value="createForm.password" type="password" show-password-on="click" />
         </n-form-item>
-        <n-form-item label="Role">
+        <n-form-item label="角色">
           <n-select v-model:value="createForm.role" :options="roleOptions" />
         </n-form-item>
-        <n-button type="primary" block :loading="saving" @click="handleCreate">Save</n-button>
+        <n-button type="primary" block :loading="saving" @click="handleCreate">保存</n-button>
       </n-form>
     </n-modal>
 
-    <n-modal v-model:show="showResetPassword" preset="card" title="Reset password" style="width: 420px">
+    <n-modal v-model:show="showResetPassword" preset="card" title="重置密码" style="width: 420px">
       <n-form :model="passwordForm">
-        <n-form-item label="New password">
+        <n-form-item label="新密码">
           <n-input v-model:value="passwordForm.password" type="password" show-password-on="click" />
         </n-form-item>
-        <n-button type="primary" block @click="handleResetPassword">Reset</n-button>
+        <n-button type="primary" block @click="handleResetPassword">确认重置</n-button>
       </n-form>
     </n-modal>
   </app-shell>
@@ -80,8 +80,8 @@ const passwordForm = reactive({
 })
 
 const roleOptions = [
-  { label: 'User', value: 'user' },
-  { label: 'Admin', value: 'admin' },
+  { label: '普通用户', value: 'user' },
+  { label: '管理员', value: 'admin' },
 ]
 
 async function loadUsers() {
@@ -99,7 +99,7 @@ async function handleCreate() {
   saving.value = true
   try {
     await createUser(createForm)
-    message.success('User created')
+    message.success('用户创建成功')
     showCreate.value = false
     createForm.username = ''
     createForm.password = ''
@@ -118,7 +118,7 @@ async function handleResetPassword() {
   }
   try {
     await resetPassword(resetUserId.value, passwordForm.password)
-    message.success('Password reset')
+    message.success('密码已重置')
     showResetPassword.value = false
     passwordForm.password = ''
   } catch (error) {
@@ -142,10 +142,10 @@ function openResetPassword(userId: number) {
 }
 
 const columns: DataTableColumns<User> = [
-  { title: 'Username', key: 'username' },
-  { title: 'Role', key: 'role' },
+  { title: '用户名', key: 'username' },
+  { title: '角色', key: 'role' },
   {
-    title: 'Active',
+    title: '启用',
     key: 'is_active',
     render: (row) =>
       h(NSwitch, {
@@ -153,9 +153,9 @@ const columns: DataTableColumns<User> = [
         onUpdateValue: (value: boolean) => void toggleUser(row, value),
       }),
   },
-  { title: 'Created', key: 'created_at' },
+  { title: '创建时间', key: 'created_at' },
   {
-    title: 'Actions',
+    title: '操作',
     key: 'actions',
     render: (row) =>
       h(
@@ -164,7 +164,7 @@ const columns: DataTableColumns<User> = [
           tertiary: true,
           onClick: () => openResetPassword(row.id),
         },
-        { default: () => 'Reset password' },
+        { default: () => '重置密码' },
       ),
   },
 ]

@@ -1,17 +1,17 @@
 <template>
   <div class="login-shell">
     <n-card class="login-card" :bordered="false">
-      <div class="eyebrow">Dockerized workspace control</div>
-      <h1>Sign in</h1>
-      <p class="subtitle">Manage users, workspace configs, and gateway containers from one panel.</p>
+      <div class="eyebrow">容器化工作区控制台</div>
+      <h1>登录</h1>
+      <p class="subtitle">在一个面板中统一管理用户、工作区配置和网关容器。</p>
       <n-form :model="form" @submit.prevent="handleSubmit">
-        <n-form-item label="Username">
-          <n-input v-model:value="form.username" placeholder="admin" />
+        <n-form-item label="用户名">
+          <n-input v-model:value="form.username" placeholder="请输入用户名" />
         </n-form-item>
-        <n-form-item label="Password">
+        <n-form-item label="密码">
           <n-input v-model:value="form.password" type="password" show-password-on="click" />
         </n-form-item>
-        <n-button type="primary" block :loading="submitting" @click="handleSubmit">Login</n-button>
+        <n-button type="primary" block :loading="submitting" @click="handleSubmit">登录</n-button>
       </n-form>
     </n-card>
   </div>
@@ -40,7 +40,7 @@ async function handleSubmit() {
   try {
     await auth.login(form.username, form.password)
     router.push((route.query.redirect as string) || '/workspaces')
-    message.success('Welcome back')
+    message.success('登录成功')
   } catch (error) {
     message.error(getErrorMessage(error))
   } finally {

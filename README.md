@@ -1,40 +1,40 @@
-# Claw Workspace Manager
+# Claw 工作区管理器
 
-Dockerized multi-user workspace manager for a single Linux host.
+面向单台 Linux 主机的容器化多用户工作区管理器。
 
-## Stack
+## 技术栈
 
-- Backend: FastAPI, SQLAlchemy 2, SQLite, Alembic
-- Frontend: Vue 3, Vite, TypeScript, Naive UI
-- Runtime: Docker Compose with one manager container and per-workspace gateway containers
+- 后端：FastAPI、SQLAlchemy 2、SQLite、Alembic
+- 前端：Vue 3、Vite、TypeScript、Naive UI
+- 运行环境：Docker Compose，包含一个管理容器和按工作区划分的网关容器
 
-## Features
+## 功能特性
 
-- Local username/password authentication with `admin` and `user` roles
-- Admin-managed user lifecycle
-- Multiple workspaces per user
-- Base and OpenClaw workspace types
-- Workspace bootstrap from server-side template directories
-- Generated `.nanobot/config.json` and `.nanobot/gateway.yaml`
-- Generated `.openclaw/openclaw.json` with raw + structured editing
-- Docker-based gateway and openclaw runtime start, stop, restart, and status tracking
+- 本地用户名/密码认证，支持 `admin` 和 `user` 角色
+- 管理员统一管理用户生命周期
+- 每个用户可拥有多个工作区
+- 支持基础工作区和 OpenClaw 工作区两种类型
+- 通过服务端模板目录初始化工作区
+- 自动生成 `.nanobot/config.json` 和 `.nanobot/gateway.yaml`
+- 自动生成 `.openclaw/openclaw.json`，支持原始文本与结构化两种编辑方式
+- 基于 Docker 的 Gateway 与 OpenClaw 运行时启停、重启和状态跟踪
 
-## Repository Layout
+## 仓库结构
 
-- [`backend`](/Users/lichen/zh_workplace/claw-workspace-manager/backend) FastAPI application, database models, Alembic, and tests
-- [`frontend`](/Users/lichen/zh_workplace/claw-workspace-manager/frontend) Vue admin console
-- [`deploy`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy) Compose, entrypoint, and template files
+- [`backend`](/Users/lichen/zh_workplace/claw-workspace-manager/backend) FastAPI 应用、数据库模型、Alembic 和测试
+- [`frontend`](/Users/lichen/zh_workplace/claw-workspace-manager/frontend) Vue 管理控制台
+- [`deploy`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy) Compose、入口脚本和模板文件
 
-## Local Backend Development
+## 本地后端开发
 
-1. Create a virtualenv and install the backend package:
+1. 创建虚拟环境并安装后端包：
 
    ```bash
    cd backend
    python3 -m pip install -e .[dev]
    ```
 
-2. Run the API:
+2. 启动 API：
 
    ```bash
    export SESSION_SECRET=dev-secret
@@ -43,13 +43,13 @@ Dockerized multi-user workspace manager for a single Linux host.
    uvicorn app.main:app --reload
    ```
 
-3. Run backend tests:
+3. 运行后端测试：
 
    ```bash
    pytest
    ```
 
-## Local Frontend Development
+## 本地前端开发
 
 ```bash
 cd frontend
@@ -57,23 +57,23 @@ npm install
 npm run dev
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:8000`.
+Vite 开发服务器会将 `/api` 代理到 `http://localhost:8000`。
 
-## Docker Deployment
+## Docker 部署
 
-1. Copy [`deploy/.env.example`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy/.env.example) to `deploy/.env` and adjust values.
-2. Ensure the host directories from `.env` exist and that the template root contains `base-workspace/`.
-3. Start the manager:
+1. 将 [`deploy/.env.example`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy/.env.example) 复制为 `deploy/.env`，并按需修改配置。
+2. 确保 `.env` 中引用的宿主机目录已经存在，且模板根目录包含 `base-workspace/`。
+3. 启动管理服务：
 
    ```bash
    cd deploy
    docker compose --env-file .env up --build -d
    ```
 
-4. Open `http://<host>:<MANAGER_PORT>`.
+4. 打开 `http://<host>:<MANAGER_PORT>`。
 
-## Notes
+## 说明
 
-- The manager container needs access to `/var/run/docker.sock`, so deploy it only on a trusted single-tenant host.
-- `HOST_WORKSPACE_ROOT` is used when the manager asks Docker to mount a workspace into gateway or openclaw runtime containers.
-- The current runtime flow assumes `GATEWAY_IMAGE` and `OPENCLAW_IMAGE` already know how to start using the mounted config files.
+- 管理容器需要访问 `/var/run/docker.sock`，因此只应部署在可信的单租户主机上。
+- 当管理器请求 Docker 将工作区挂载进 Gateway 或 OpenClaw 运行容器时，会使用 `HOST_WORKSPACE_ROOT`。
+- 当前运行流程默认 `GATEWAY_IMAGE` 和 `OPENCLAW_IMAGE` 已具备读取挂载配置文件并启动的能力。

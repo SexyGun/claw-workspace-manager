@@ -4,11 +4,11 @@
       <n-card :bordered="false" class="hero-card">
         <n-space justify="space-between" align="center">
           <div>
-            <div class="eyebrow">Workspace inventory</div>
-            <h2>All workspaces you can operate</h2>
-            <n-text depth="3">Create isolated base or openclaw workspaces, then manage their config and runtime.</n-text>
+            <div class="eyebrow">工作区总览</div>
+            <h2>你可以操作的全部工作区</h2>
+            <n-text depth="3">创建独立的基础或 OpenClaw 工作区，并集中管理配置与运行状态。</n-text>
           </div>
-          <n-button type="primary" @click="showCreate = true">New Workspace</n-button>
+          <n-button type="primary" @click="showCreate = true">新建工作区</n-button>
         </n-space>
       </n-card>
 
@@ -31,12 +31,12 @@
       </n-grid>
     </n-space>
 
-    <n-modal v-model:show="showCreate" preset="card" title="Create workspace" style="width: 460px">
+    <n-modal v-model:show="showCreate" preset="card" title="新建工作区" style="width: 460px">
       <n-form :model="form">
-        <n-form-item label="Name">
-          <n-input v-model:value="form.name" placeholder="Alpha Workspace" />
+        <n-form-item label="名称">
+          <n-input v-model:value="form.name" placeholder="例如：算法实验工作区" />
         </n-form-item>
-        <n-form-item label="Workspace Type">
+        <n-form-item label="工作区类型">
           <n-select
             v-model:value="form.workspace_type"
             :options="workspaceTypeOptions"
@@ -45,7 +45,7 @@
           />
         </n-form-item>
         <n-text depth="3">{{ selectedWorkspaceTypeDescription }}</n-text>
-        <n-button type="primary" block :loading="saving" @click="handleCreate">Create</n-button>
+        <n-button type="primary" block :loading="saving" @click="handleCreate">创建</n-button>
       </n-form>
     </n-modal>
   </app-shell>
@@ -119,7 +119,7 @@ async function handleCreate() {
     form.name = ''
     form.workspace_type = 'base'
     showCreate.value = false
-    message.success('Workspace created')
+    message.success('工作区创建成功')
     await loadWorkspaces()
     router.push(`/workspaces/${workspace.id}`)
   } catch (error) {

@@ -3,11 +3,11 @@
     <n-layout-header bordered class="shell-header">
       <div class="brand">
         <span class="brand-mark">Claw</span>
-        <span class="brand-text">Workspace Manager</span>
+        <span class="brand-text">工作区管理器</span>
       </div>
       <n-space align="center">
         <n-button quaternary :type="route.path.startsWith('/workspaces') ? 'primary' : 'default'" @click="router.push('/workspaces')">
-          Workspaces
+          工作区
         </n-button>
         <n-button
           v-if="auth.isAdmin.value"
@@ -15,10 +15,10 @@
           :type="route.path.startsWith('/users') ? 'primary' : 'default'"
           @click="router.push('/users')"
         >
-          Users
+          用户
         </n-button>
         <n-text depth="3">{{ auth.currentUser.value?.username }}</n-text>
-        <n-button secondary @click="handleLogout">Logout</n-button>
+        <n-button secondary @click="handleLogout">退出登录</n-button>
       </n-space>
     </n-layout-header>
     <n-layout-content content-style="padding: 24px; max-width: 1180px; margin: 0 auto;">
@@ -40,7 +40,7 @@ const message = useMessage()
 
 async function handleLogout() {
   await auth.logout()
-  message.success('Logged out')
+  message.success('已退出登录')
   router.push('/login')
 }
 </script>

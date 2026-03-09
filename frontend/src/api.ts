@@ -26,7 +26,7 @@ export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message
   }
-  return 'Unexpected error'
+  return '发生未知错误'
 }
 
 export async function login(username: string, password: string): Promise<User> {

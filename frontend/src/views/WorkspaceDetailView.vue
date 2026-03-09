@@ -4,7 +4,7 @@
       <n-card :bordered="false" class="workspace-header">
         <n-space justify="space-between" align="start" wrap>
           <div>
-            <div class="eyebrow">Workspace detail</div>
+            <div class="eyebrow">工作区详情</div>
             <n-h2 style="margin: 8px 0 10px">{{ workspaceName }}</n-h2>
             <n-space>
               <n-tag type="warning">{{ summary.workspace.status }}</n-tag>
@@ -18,13 +18,13 @@
             </div>
           </div>
           <n-space vertical align="end">
-            <n-input v-model:value="workspaceName" placeholder="Workspace name" />
-            <n-button type="primary" @click="handleRename">Rename Workspace</n-button>
+            <n-input v-model:value="workspaceName" placeholder="请输入工作区名称" />
+            <n-button type="primary" @click="handleRename">重命名工作区</n-button>
             <n-space>
-              <n-button secondary @click="handleRuntimeAction('start')">Start</n-button>
-              <n-button secondary @click="handleRuntimeAction('restart')">Restart</n-button>
-              <n-button tertiary @click="handleRuntimeAction('stop')">Stop</n-button>
-              <n-button quaternary @click="refreshSummary">Refresh</n-button>
+              <n-button secondary @click="handleRuntimeAction('start')">启动</n-button>
+              <n-button secondary @click="handleRuntimeAction('restart')">重启</n-button>
+              <n-button tertiary @click="handleRuntimeAction('stop')">停止</n-button>
+              <n-button quaternary @click="refreshSummary">刷新</n-button>
             </n-space>
           </n-space>
         </n-space>
@@ -33,7 +33,7 @@
       <template v-if="isBaseWorkspace">
         <n-grid cols="1 xl:2" responsive="screen" :x-gap="18" :y-gap="18">
           <n-grid-item>
-            <n-card title="Nanobot Channel Config" class="panel-card">
+            <n-card title="Nanobot 渠道配置" class="panel-card">
               <template #header-extra>
                 <div class="card-path">
                   <n-text depth="3">{{ summary.nanobot_config?.rendered_path }}</n-text>
@@ -68,14 +68,14 @@
                     </n-grid>
                   </n-form>
                 </n-card>
-                <n-button type="primary" :loading="savingNanobot" @click="handleSaveNanobot">Save Nanobot Config</n-button>
+                <n-button type="primary" :loading="savingNanobot" @click="handleSaveNanobot">保存 Nanobot 配置</n-button>
               </n-space>
             </n-card>
           </n-grid-item>
 
           <n-grid-item>
             <n-space vertical size="large">
-              <n-card title="Gateway Config" class="panel-card">
+              <n-card title="Gateway 配置" class="panel-card">
                 <template #header-extra>
                   <div class="card-path">
                     <n-text depth="3">{{ summary.gateway_config?.rendered_path }}</n-text>
@@ -110,11 +110,11 @@
                       </n-form-item>
                     </n-grid-item>
                   </n-grid>
-                  <n-button type="primary" :loading="savingGateway" @click="handleSaveGateway">Save Gateway Config</n-button>
+                  <n-button type="primary" :loading="savingGateway" @click="handleSaveGateway">保存 Gateway 配置</n-button>
                 </n-form>
               </n-card>
 
-              <n-card title="Gateway Runtime" class="panel-card">
+              <n-card title="Gateway 运行状态" class="panel-card">
                 <runtime-status-card :status="summary.gateway_status" />
               </n-card>
             </n-space>
@@ -126,7 +126,7 @@
         <n-grid cols="1 xl:2" responsive="screen" :x-gap="18" :y-gap="18">
           <n-grid-item>
             <n-space vertical size="large">
-              <n-card title="OpenClaw Structured Config" class="panel-card">
+              <n-card title="OpenClaw 结构化配置" class="panel-card">
                 <template #header-extra>
                   <div class="card-path">
                     <n-text depth="3">{{ summary.openclaw_config?.rendered_path }}</n-text>
@@ -168,14 +168,14 @@
                 </n-form>
               </n-card>
 
-              <n-card title="OpenClaw Runtime" class="panel-card">
+              <n-card title="OpenClaw 运行状态" class="panel-card">
                 <runtime-status-card :status="summary.openclaw_status" />
               </n-card>
             </n-space>
           </n-grid-item>
 
           <n-grid-item>
-            <n-card title="OpenClaw Raw JSON5" class="panel-card">
+            <n-card title="OpenClaw 原始 JSON5" class="panel-card">
               <n-space vertical>
                 <n-input
                   v-model:value="openclawRawJson"
@@ -183,7 +183,7 @@
                   :autosize="{ minRows: 20, maxRows: 28 }"
                   placeholder="{ gateway: { port: 7331 } }"
                 />
-                <n-button type="primary" :loading="savingOpenClaw" @click="handleSaveOpenClaw">Save OpenClaw Config</n-button>
+                <n-button type="primary" :loading="savingOpenClaw" @click="handleSaveOpenClaw">保存 OpenClaw 配置</n-button>
               </n-space>
             </n-card>
           </n-grid-item>
@@ -252,12 +252,12 @@ const RuntimeStatusCard = defineComponent({
         { labelPlacement: 'left', column: 1, bordered: true },
         {
           default: () => [
-            h(NDescriptionsItem, { label: 'State' }, { default: () => props.status?.state ?? '-' }),
-            h(NDescriptionsItem, { label: 'Container' }, { default: () => props.status?.container_name ?? '-' }),
-            h(NDescriptionsItem, { label: 'Container ID' }, { default: () => props.status?.last_container_id ?? '-' }),
-            h(NDescriptionsItem, { label: 'Started' }, { default: () => props.status?.started_at ?? '-' }),
-            h(NDescriptionsItem, { label: 'Stopped' }, { default: () => props.status?.stopped_at ?? '-' }),
-            h(NDescriptionsItem, { label: 'Last Error' }, { default: () => props.status?.last_error ?? '-' }),
+            h(NDescriptionsItem, { label: '状态' }, { default: () => props.status?.state ?? '-' }),
+            h(NDescriptionsItem, { label: '容器名称' }, { default: () => props.status?.container_name ?? '-' }),
+            h(NDescriptionsItem, { label: '容器 ID' }, { default: () => props.status?.last_container_id ?? '-' }),
+            h(NDescriptionsItem, { label: '启动时间' }, { default: () => props.status?.started_at ?? '-' }),
+            h(NDescriptionsItem, { label: '停止时间' }, { default: () => props.status?.stopped_at ?? '-' }),
+            h(NDescriptionsItem, { label: '最近错误' }, { default: () => props.status?.last_error ?? '-' }),
           ],
         },
       )
@@ -419,7 +419,7 @@ async function refreshSummary() {
 async function handleRename() {
   try {
     await updateWorkspaceName(workspaceId.value, workspaceName.value)
-    message.success('Workspace renamed')
+    message.success('工作区已重命名')
     await refreshSummary()
   } catch (error) {
     message.error(getErrorMessage(error))
@@ -430,7 +430,7 @@ async function handleSaveNanobot() {
   savingNanobot.value = true
   try {
     await saveNanobotConfig(workspaceId.value, nanobotValues)
-    message.success('Nanobot config saved')
+    message.success('Nanobot 配置已保存')
     await refreshSummary()
   } catch (error) {
     message.error(getErrorMessage(error))
@@ -443,7 +443,7 @@ async function handleSaveGateway() {
   savingGateway.value = true
   try {
     await saveGatewayConfig(workspaceId.value, gatewayValues)
-    message.success('Gateway config saved')
+    message.success('Gateway 配置已保存')
     await refreshSummary()
   } catch (error) {
     message.error(getErrorMessage(error))
@@ -456,7 +456,7 @@ async function handleSaveOpenClaw() {
   savingOpenClaw.value = true
   try {
     await saveOpenClawConfig(workspaceId.value, openclawValues, openclawRawJson.value)
-    message.success('OpenClaw config saved')
+    message.success('OpenClaw 配置已保存')
     await refreshSummary()
   } catch (error) {
     message.error(getErrorMessage(error))
@@ -484,7 +484,9 @@ async function handleRuntimeAction(action: 'start' | 'stop' | 'restart') {
         await restartOpenClaw(workspaceId.value)
       }
     }
-    message.success(`Runtime ${action} command sent`)
+    message.success(
+      action === 'start' ? '已发送启动命令' : action === 'stop' ? '已发送停止命令' : '已发送重启命令',
+    )
     await refreshSummary()
   } catch (error) {
     message.error(getErrorMessage(error))

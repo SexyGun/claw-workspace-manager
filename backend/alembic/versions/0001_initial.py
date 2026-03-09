@@ -29,7 +29,6 @@ def upgrade() -> None:
         sa.Column("owner_user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("slug", sa.String(length=128), nullable=False),
-        sa.Column("workspace_type", sa.String(length=32), nullable=False, server_default="base"),
         sa.Column("host_path", sa.String(length=512), nullable=False),
         sa.Column("template_version", sa.String(length=64), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
@@ -45,10 +44,8 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.Integer(), sa.ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True),
         sa.Column("channel_config_json", sa.JSON(), nullable=False),
         sa.Column("gateway_config_json", sa.JSON(), nullable=False),
-        sa.Column("openclaw_config_json", sa.JSON(), nullable=False),
         sa.Column("nanobot_rendered_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("gateway_rendered_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("openclaw_rendered_at", sa.DateTime(timezone=True), nullable=True),
     )
 
     op.create_table(
@@ -63,21 +60,8 @@ def upgrade() -> None:
         sa.Column("stopped_at", sa.DateTime(timezone=True), nullable=True),
     )
 
-    op.create_table(
-        "openclaw_instances",
-        sa.Column("workspace_id", sa.Integer(), sa.ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("container_name", sa.String(length=255), nullable=False),
-        sa.Column("image", sa.String(length=255), nullable=False),
-        sa.Column("state", sa.String(length=32), nullable=False),
-        sa.Column("last_container_id", sa.String(length=255), nullable=True),
-        sa.Column("last_error", sa.Text(), nullable=True),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("stopped_at", sa.DateTime(timezone=True), nullable=True),
-    )
-
 
 def downgrade() -> None:
-    op.drop_table("openclaw_instances")
     op.drop_table("gateway_instances")
     op.drop_table("workspace_configs")
     op.drop_index("ix_workspaces_owner_user_id", table_name="workspaces")

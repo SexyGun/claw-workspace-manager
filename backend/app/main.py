@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.constants import USER_ROLE_ADMIN
 from app.db import Base, SessionLocal, engine
 from app.models import User
+from app.schema_compat import ensure_sqlite_schema_compatibility
 from app.services.auth import create_user
 from app.services.gateway import build_gateway_manager
 from app.services.openclaw_runtime import build_openclaw_runtime_manager
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
     settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     ensure_workspace_roots(settings)
     Base.metadata.create_all(bind=engine)
+    ensure_sqlite_schema_compatibility(engine)
     ensure_bootstrap_admin()
     gateway_manager = build_gateway_manager(settings)
     openclaw_manager = build_openclaw_runtime_manager(settings)

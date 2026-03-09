@@ -13,7 +13,9 @@
               </n-tag>
               <n-tag :type="runtimeTagType">{{ runtimeStatus?.state ?? 'unknown' }}</n-tag>
             </n-space>
-            <n-text depth="3">{{ summary.workspace.host_path }}</n-text>
+            <div class="path-text">
+              <n-text depth="3">{{ summary.workspace.host_path }}</n-text>
+            </div>
           </div>
           <n-space vertical align="end">
             <n-input v-model:value="workspaceName" placeholder="Workspace name" />
@@ -33,7 +35,9 @@
           <n-grid-item>
             <n-card title="Nanobot Channel Config" class="panel-card">
               <template #header-extra>
-                <n-text depth="3">{{ summary.nanobot_config?.rendered_path }}</n-text>
+                <div class="card-path">
+                  <n-text depth="3">{{ summary.nanobot_config?.rendered_path }}</n-text>
+                </div>
               </template>
               <n-space vertical size="large">
                 <n-card
@@ -73,7 +77,9 @@
             <n-space vertical size="large">
               <n-card title="Gateway Config" class="panel-card">
                 <template #header-extra>
-                  <n-text depth="3">{{ summary.gateway_config?.rendered_path }}</n-text>
+                  <div class="card-path">
+                    <n-text depth="3">{{ summary.gateway_config?.rendered_path }}</n-text>
+                  </div>
                 </template>
                 <n-form :model="gatewayValues" label-placement="top">
                   <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
@@ -122,7 +128,9 @@
             <n-space vertical size="large">
               <n-card title="OpenClaw Structured Config" class="panel-card">
                 <template #header-extra>
-                  <n-text depth="3">{{ summary.openclaw_config?.rendered_path }}</n-text>
+                  <div class="card-path">
+                    <n-text depth="3">{{ summary.openclaw_config?.rendered_path }}</n-text>
+                  </div>
                 </template>
                 <n-form :model="openclawValues" label-placement="top">
                   <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
@@ -500,8 +508,32 @@ onMounted(() => {
   font-size: 0.78rem;
 }
 
+.path-text,
+.card-path {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .panel-card {
   background: rgba(15, 23, 38, 0.72);
+}
+
+.panel-card :deep(.n-card-header) {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.panel-card :deep(.n-card-header__main) {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.panel-card :deep(.n-card-header__extra) {
+  min-width: 0;
+  flex: 1 1 100%;
+  max-width: 100%;
 }
 
 .section-card {

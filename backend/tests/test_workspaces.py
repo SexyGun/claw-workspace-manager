@@ -17,6 +17,7 @@ def test_workspace_creation_renders_configs(client: TestClient, app_env):
     create_response = client.post("/api/workspaces", json={"name": "Alice Primary"})
     assert create_response.status_code == 201, create_response.text
     workspace = create_response.json()
+    assert workspace["workspace_type"] == "base"
 
     detail_response = client.get(f"/api/workspaces/{workspace['id']}")
     assert detail_response.status_code == 200
@@ -30,6 +31,10 @@ def test_workspace_creation_renders_configs(client: TestClient, app_env):
     config_payload = json.loads(config_path.read_text(encoding="utf-8"))
     assert config_payload["workspace"]["slug"] == "alice-primary"
     assert "feishu" in config_payload["channels"]
+
+    workspace_types_response = client.get("/api/workspace-types")
+    assert workspace_types_response.status_code == 200
+    assert {item["key"] for item in workspace_types_response.json()} == {"base", "openclaw"}
 
 
 def test_workspace_access_isolation(client: TestClient):

@@ -1,6 +1,14 @@
 import axios from 'axios'
 
-import type { GatewayStatus, User, Workspace, WorkspaceConfigRead, WorkspaceSummary } from './types'
+import type {
+  OpenClawConfigRead,
+  RuntimeStatus,
+  User,
+  Workspace,
+  WorkspaceConfigRead,
+  WorkspaceSummary,
+  WorkspaceType,
+} from './types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -54,13 +62,18 @@ export async function resetPassword(userId: number, password: string) {
   await api.post(`/users/${userId}/reset-password`, { password })
 }
 
+export async function listWorkspaceTypes(): Promise<WorkspaceType[]> {
+  const response = await api.get<WorkspaceType[]>('/workspace-types')
+  return response.data
+}
+
 export async function listWorkspaces(): Promise<Workspace[]> {
   const response = await api.get<Workspace[]>('/workspaces')
   return response.data
 }
 
-export async function createWorkspace(name: string): Promise<Workspace> {
-  const response = await api.post<Workspace>('/workspaces', { name })
+export async function createWorkspace(name: string, workspaceType: 'base' | 'openclaw'): Promise<Workspace> {
+  const response = await api.post<Workspace>('/workspaces', { name, workspace_type: workspaceType })
   return response.data
 }
 
@@ -84,22 +97,59 @@ export async function saveGatewayConfig(workspaceId: number, values: Record<stri
   return response.data
 }
 
-export async function fetchGatewayStatus(workspaceId: number): Promise<GatewayStatus> {
-  const response = await api.get<GatewayStatus>(`/workspaces/${workspaceId}/gateway/status`)
+export async function fetchGatewayStatus(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.get<RuntimeStatus>(`/workspaces/${workspaceId}/gateway/status`)
   return response.data
 }
 
-export async function startGateway(workspaceId: number): Promise<GatewayStatus> {
-  const response = await api.post<GatewayStatus>(`/workspaces/${workspaceId}/gateway/start`)
+export async function startGateway(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/gateway/start`)
   return response.data
 }
 
-export async function stopGateway(workspaceId: number): Promise<GatewayStatus> {
-  const response = await api.post<GatewayStatus>(`/workspaces/${workspaceId}/gateway/stop`)
+export async function stopGateway(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/gateway/stop`)
   return response.data
 }
 
-export async function restartGateway(workspaceId: number): Promise<GatewayStatus> {
-  const response = await api.post<GatewayStatus>(`/workspaces/${workspaceId}/gateway/restart`)
+export async function restartGateway(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/gateway/restart`)
+  return response.data
+}
+
+export async function fetchOpenClawConfig(workspaceId: number): Promise<OpenClawConfigRead> {
+  const response = await api.get<OpenClawConfigRead>(`/workspaces/${workspaceId}/openclaw-config`)
+  return response.data
+}
+
+export async function saveOpenClawConfig(
+  workspaceId: number,
+  structuredValues: Record<string, unknown>,
+  rawJson5: string,
+): Promise<OpenClawConfigRead> {
+  const response = await api.put<OpenClawConfigRead>(`/workspaces/${workspaceId}/openclaw-config`, {
+    structured_values: structuredValues,
+    raw_json5: rawJson5,
+  })
+  return response.data
+}
+
+export async function fetchOpenClawStatus(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.get<RuntimeStatus>(`/workspaces/${workspaceId}/openclaw/status`)
+  return response.data
+}
+
+export async function startOpenClaw(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/openclaw/start`)
+  return response.data
+}
+
+export async function stopOpenClaw(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/openclaw/stop`)
+  return response.data
+}
+
+export async function restartOpenClaw(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/openclaw/restart`)
   return response.data
 }

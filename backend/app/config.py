@@ -18,10 +18,13 @@ class Settings(BaseSettings):
     workspace_root: Path = Path("./.data/workspaces")
     host_workspace_root: Path = Path("./.data/workspaces")
     workspace_template_root: Path = Path("./deploy/templates/base-workspace")
+    openclaw_workspace_template_root: Path = Path("./deploy/templates/openclaw-workspace")
     gateway_image: str = "ghcr.io/example/nanobot-gateway:latest"
     gateway_workspace_mount: str = "/workspace"
     gateway_config_path: str = "/workspace/.nanobot/gateway.yaml"
     nanobot_config_path: str = "/workspace/.nanobot/config.json"
+    openclaw_image: str = "ghcr.io/example/openclaw:latest"
+    openclaw_workspace_mount: str = "/workspace"
     gateway_stop_timeout: int = 10
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     bootstrap_admin_username: str | None = None

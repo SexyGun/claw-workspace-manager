@@ -13,7 +13,9 @@ services:
       WORKSPACE_ROOT: /data/workspaces
       HOST_WORKSPACE_ROOT: "${HOST_WORKSPACE_ROOT}"
       WORKSPACE_TEMPLATE_ROOT: /data/templates/base-workspace
+      OPENCLAW_WORKSPACE_TEMPLATE_ROOT: /data/templates/openclaw-workspace
       GATEWAY_IMAGE: "${GATEWAY_IMAGE}"
+      OPENCLAW_IMAGE: "${OPENCLAW_IMAGE}"
       GATEWAY_WORKSPACE_MOUNT: /workspace
       GATEWAY_CONFIG_PATH: /workspace/.nanobot/gateway.yaml
       NANOBOT_CONFIG_PATH: /workspace/.nanobot/config.json

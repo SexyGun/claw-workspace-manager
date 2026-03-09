@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+from app.constants import WORKSPACE_TYPE_BASE
 
 
 class TimestampMixin:
@@ -33,6 +34,7 @@ class Workspace(TimestampMixin, Base):
     owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_type: Mapped[str] = mapped_column(String(32), nullable=False, default=WORKSPACE_TYPE_BASE)
     host_path: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
     template_version: Mapped[str] = mapped_column(String(64), nullable=False, default="base-workspace-v1")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ready")
@@ -48,6 +50,11 @@ class Workspace(TimestampMixin, Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    openclaw_instance: Mapped["OpenClawInstance"] = relationship(
+        back_populates="workspace",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class WorkspaceConfig(Base):
@@ -56,8 +63,10 @@ class WorkspaceConfig(Base):
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
     channel_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     gateway_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    openclaw_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     nanobot_rendered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     gateway_rendered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    openclaw_rendered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="config")
 
@@ -75,3 +84,18 @@ class GatewayInstance(Base):
     stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     workspace: Mapped["Workspace"] = relationship(back_populates="gateway_instance")
+
+
+class OpenClawInstance(Base):
+    __tablename__ = "openclaw_instances"
+
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
+    container_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    image: Mapped[str] = mapped_column(String(255), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="stopped")
+    last_container_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    workspace: Mapped["Workspace"] = relationship(back_populates="openclaw_instance")

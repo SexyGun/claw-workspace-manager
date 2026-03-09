@@ -8,7 +8,10 @@
             <n-h2 style="margin: 8px 0 10px">{{ workspaceName }}</n-h2>
             <n-space>
               <n-tag type="warning">{{ summary.workspace.status }}</n-tag>
-              <n-tag :type="gatewayTagType">{{ summary.gateway_status.state }}</n-tag>
+              <n-tag :type="summary.workspace.workspace_type === 'openclaw' ? 'info' : 'success'">
+                {{ summary.workspace.workspace_type }}
+              </n-tag>
+              <n-tag :type="runtimeTagType">{{ runtimeStatus?.state ?? 'unknown' }}</n-tag>
             </n-space>
             <n-text depth="3">{{ summary.workspace.host_path }}</n-text>
           </div>
@@ -16,107 +19,168 @@
             <n-input v-model:value="workspaceName" placeholder="Workspace name" />
             <n-button type="primary" @click="handleRename">Rename Workspace</n-button>
             <n-space>
-              <n-button secondary @click="handleGatewayAction('start')">Start</n-button>
-              <n-button secondary @click="handleGatewayAction('restart')">Restart</n-button>
-              <n-button tertiary @click="handleGatewayAction('stop')">Stop</n-button>
+              <n-button secondary @click="handleRuntimeAction('start')">Start</n-button>
+              <n-button secondary @click="handleRuntimeAction('restart')">Restart</n-button>
+              <n-button tertiary @click="handleRuntimeAction('stop')">Stop</n-button>
               <n-button quaternary @click="refreshSummary">Refresh</n-button>
             </n-space>
           </n-space>
         </n-space>
       </n-card>
 
-      <n-grid cols="1 xl:2" responsive="screen" :x-gap="18" :y-gap="18">
-        <n-grid-item>
-          <n-card title="Nanobot Channel Config" class="panel-card">
-            <template #header-extra>
-              <n-text depth="3">{{ summary.nanobot_config.rendered_path }}</n-text>
-            </template>
+      <template v-if="isBaseWorkspace">
+        <n-grid cols="1 xl:2" responsive="screen" :x-gap="18" :y-gap="18">
+          <n-grid-item>
+            <n-card title="Nanobot Channel Config" class="panel-card">
+              <template #header-extra>
+                <n-text depth="3">{{ summary.nanobot_config?.rendered_path }}</n-text>
+              </template>
+              <n-space vertical size="large">
+                <n-card
+                  v-for="section in summary.nanobot_config?.schema.sections || []"
+                  :key="section.key"
+                  embedded
+                  class="section-card"
+                >
+                  <template #header>{{ section.title }}</template>
+                  <n-form :model="nanobotValues[section.key]" label-placement="top">
+                    <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
+                      <n-grid-item v-for="field in section.fields" :key="field.key">
+                        <n-form-item :label="field.label">
+                          <n-switch
+                            v-if="field.type === 'boolean'"
+                            :value="channelBooleanValue(section.key, field.key)"
+                            @update:value="updateChannelBoolean(section.key, field.key, $event)"
+                          />
+                          <n-input
+                            v-else
+                            :value="channelTextValue(section.key, field.key)"
+                            @update:value="updateChannelText(section.key, field.key, $event)"
+                            :type="field.type === 'password' ? 'password' : 'text'"
+                            show-password-on="click"
+                          />
+                        </n-form-item>
+                      </n-grid-item>
+                    </n-grid>
+                  </n-form>
+                </n-card>
+                <n-button type="primary" :loading="savingNanobot" @click="handleSaveNanobot">Save Nanobot Config</n-button>
+              </n-space>
+            </n-card>
+          </n-grid-item>
+
+          <n-grid-item>
             <n-space vertical size="large">
-              <n-card
-                v-for="section in summary.nanobot_config.schema.sections"
-                :key="section.key"
-                embedded
-                class="section-card"
-              >
-                <template #header>{{ section.title }}</template>
-                <n-form :model="nanobotValues[section.key]" label-placement="top">
+              <n-card title="Gateway Config" class="panel-card">
+                <template #header-extra>
+                  <n-text depth="3">{{ summary.gateway_config?.rendered_path }}</n-text>
+                </template>
+                <n-form :model="gatewayValues" label-placement="top">
                   <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
-                    <n-grid-item v-for="field in section.fields" :key="field.key">
+                    <n-grid-item v-for="field in summary.gateway_config?.schema.fields || []" :key="field.key">
                       <n-form-item :label="field.label">
                         <n-switch
                           v-if="field.type === 'boolean'"
-                          :value="channelBooleanValue(section.key, field.key)"
-                          @update:value="updateChannelBoolean(section.key, field.key, $event)"
+                          :value="gatewayBooleanValue(field.key)"
+                          @update:value="updateGatewayBoolean(field.key, $event)"
+                        />
+                        <n-input-number
+                          v-else-if="field.type === 'number'"
+                          :value="gatewayNumberValue(field.key)"
+                          @update:value="updateGatewayNumber(field.key, $event)"
+                          style="width: 100%"
+                        />
+                        <n-select
+                          v-else-if="field.type === 'select'"
+                          :value="gatewayTextValue(field.key)"
+                          @update:value="updateGatewayText(field.key, $event)"
+                          :options="field.options?.map((value) => ({ label: value, value }))"
                         />
                         <n-input
                           v-else
-                          :value="channelTextValue(section.key, field.key)"
-                          @update:value="updateChannelText(section.key, field.key, $event)"
-                          :type="field.type === 'password' ? 'password' : 'text'"
+                          :value="gatewayTextValue(field.key)"
+                          @update:value="updateGatewayText(field.key, $event)"
+                        />
+                      </n-form-item>
+                    </n-grid-item>
+                  </n-grid>
+                  <n-button type="primary" :loading="savingGateway" @click="handleSaveGateway">Save Gateway Config</n-button>
+                </n-form>
+              </n-card>
+
+              <n-card title="Gateway Runtime" class="panel-card">
+                <runtime-status-card :status="summary.gateway_status" />
+              </n-card>
+            </n-space>
+          </n-grid-item>
+        </n-grid>
+      </template>
+
+      <template v-else>
+        <n-grid cols="1 xl:2" responsive="screen" :x-gap="18" :y-gap="18">
+          <n-grid-item>
+            <n-space vertical size="large">
+              <n-card title="OpenClaw Structured Config" class="panel-card">
+                <template #header-extra>
+                  <n-text depth="3">{{ summary.openclaw_config?.rendered_path }}</n-text>
+                </template>
+                <n-form :model="openclawValues" label-placement="top">
+                  <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
+                    <n-grid-item v-for="field in summary.openclaw_config?.schema.fields || []" :key="field.key">
+                      <n-form-item :label="field.label">
+                        <n-switch
+                          v-if="field.type === 'boolean'"
+                          :value="openclawBooleanValue(field.key)"
+                          @update:value="updateOpenClawBoolean(field.key, $event)"
+                        />
+                        <n-input-number
+                          v-else-if="field.type === 'number'"
+                          :value="openclawNumberValue(field.key)"
+                          @update:value="updateOpenClawNumber(field.key, $event)"
+                          style="width: 100%"
+                        />
+                        <n-select
+                          v-else-if="field.type === 'select'"
+                          :value="openclawTextValue(field.key)"
+                          @update:value="updateOpenClawText(field.key, $event)"
+                          :options="field.options?.map((value) => ({ label: value, value }))"
+                        />
+                        <n-input
+                          v-else
+                          :value="openclawTextValue(field.key)"
+                          :type="field.type === 'password' ? 'password' : field.type === 'textarea' ? 'textarea' : 'text'"
+                          :autosize="field.type === 'textarea' ? { minRows: 3, maxRows: 6 } : undefined"
+                          :placeholder="field.placeholder"
                           show-password-on="click"
+                          @update:value="updateOpenClawText(field.key, $event)"
                         />
                       </n-form-item>
                     </n-grid-item>
                   </n-grid>
                 </n-form>
               </n-card>
-              <n-button type="primary" :loading="savingNanobot" @click="handleSaveNanobot">Save Nanobot Config</n-button>
+
+              <n-card title="OpenClaw Runtime" class="panel-card">
+                <runtime-status-card :status="summary.openclaw_status" />
+              </n-card>
             </n-space>
-          </n-card>
-        </n-grid-item>
+          </n-grid-item>
 
-        <n-grid-item>
-          <n-space vertical size="large">
-            <n-card title="Gateway Config" class="panel-card">
-              <template #header-extra>
-                <n-text depth="3">{{ summary.gateway_config.rendered_path }}</n-text>
-              </template>
-              <n-form :model="gatewayValues" label-placement="top">
-                <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
-                  <n-grid-item v-for="field in summary.gateway_config.schema.fields" :key="field.key">
-                    <n-form-item :label="field.label">
-                      <n-switch
-                        v-if="field.type === 'boolean'"
-                        :value="gatewayBooleanValue(field.key)"
-                        @update:value="updateGatewayBoolean(field.key, $event)"
-                      />
-                      <n-input-number
-                        v-else-if="field.type === 'number'"
-                        :value="gatewayNumberValue(field.key)"
-                        @update:value="updateGatewayNumber(field.key, $event)"
-                        style="width: 100%"
-                      />
-                      <n-select
-                        v-else-if="field.type === 'select'"
-                        :value="gatewayTextValue(field.key)"
-                        @update:value="updateGatewayText(field.key, $event)"
-                        :options="field.options?.map((value) => ({ label: value, value }))"
-                      />
-                      <n-input
-                        v-else
-                        :value="gatewayTextValue(field.key)"
-                        @update:value="updateGatewayText(field.key, $event)"
-                      />
-                    </n-form-item>
-                  </n-grid-item>
-                </n-grid>
-                <n-button type="primary" :loading="savingGateway" @click="handleSaveGateway">Save Gateway Config</n-button>
-              </n-form>
+          <n-grid-item>
+            <n-card title="OpenClaw Raw JSON5" class="panel-card">
+              <n-space vertical>
+                <n-input
+                  v-model:value="openclawRawJson"
+                  type="textarea"
+                  :autosize="{ minRows: 20, maxRows: 28 }"
+                  placeholder="{ gateway: { port: 7331 } }"
+                />
+                <n-button type="primary" :loading="savingOpenClaw" @click="handleSaveOpenClaw">Save OpenClaw Config</n-button>
+              </n-space>
             </n-card>
-
-            <n-card title="Gateway Runtime" class="panel-card">
-              <n-descriptions label-placement="left" :column="1" bordered>
-                <n-descriptions-item label="State">{{ summary.gateway_status.state }}</n-descriptions-item>
-                <n-descriptions-item label="Container">{{ summary.gateway_status.container_name }}</n-descriptions-item>
-                <n-descriptions-item label="Container ID">{{ summary.gateway_status.last_container_id || '-' }}</n-descriptions-item>
-                <n-descriptions-item label="Started">{{ summary.gateway_status.started_at || '-' }}</n-descriptions-item>
-                <n-descriptions-item label="Stopped">{{ summary.gateway_status.stopped_at || '-' }}</n-descriptions-item>
-                <n-descriptions-item label="Last Error">{{ summary.gateway_status.last_error || '-' }}</n-descriptions-item>
-              </n-descriptions>
-            </n-card>
-          </n-space>
-        </n-grid-item>
-      </n-grid>
+          </n-grid-item>
+        </n-grid>
+      </template>
     </n-space>
 
     <n-spin v-else size="large" />
@@ -124,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
 import {
   NButton,
   NCard,
@@ -152,13 +216,45 @@ import {
   fetchWorkspaceSummary,
   getErrorMessage,
   restartGateway,
+  restartOpenClaw,
   saveGatewayConfig,
   saveNanobotConfig,
+  saveOpenClawConfig,
   startGateway,
+  startOpenClaw,
   stopGateway,
+  stopOpenClaw,
   updateWorkspaceName,
 } from '../api'
-import type { WorkspaceSummary } from '../types'
+import type { RuntimeStatus, WorkspaceSummary } from '../types'
+
+const RuntimeStatusCard = defineComponent({
+  name: 'RuntimeStatusCard',
+  props: {
+    status: {
+      type: Object as () => RuntimeStatus | null | undefined,
+      required: false,
+      default: null,
+    },
+  },
+  setup(props) {
+    return () =>
+      h(
+        NDescriptions,
+        { labelPlacement: 'left', column: 1, bordered: true },
+        {
+          default: () => [
+            h(NDescriptionsItem, { label: 'State' }, { default: () => props.status?.state ?? '-' }),
+            h(NDescriptionsItem, { label: 'Container' }, { default: () => props.status?.container_name ?? '-' }),
+            h(NDescriptionsItem, { label: 'Container ID' }, { default: () => props.status?.last_container_id ?? '-' }),
+            h(NDescriptionsItem, { label: 'Started' }, { default: () => props.status?.started_at ?? '-' }),
+            h(NDescriptionsItem, { label: 'Stopped' }, { default: () => props.status?.stopped_at ?? '-' }),
+            h(NDescriptionsItem, { label: 'Last Error' }, { default: () => props.status?.last_error ?? '-' }),
+          ],
+        },
+      )
+  },
+})
 
 const message = useMessage()
 const route = useRoute()
@@ -167,11 +263,22 @@ const summary = ref<WorkspaceSummary | null>(null)
 const workspaceName = ref('')
 const savingNanobot = ref(false)
 const savingGateway = ref(false)
+const savingOpenClaw = ref(false)
+const openclawRawJson = ref('')
 const nanobotValues = reactive<Record<string, Record<string, string | boolean>>>({})
 const gatewayValues = reactive<Record<string, string | number | boolean>>({})
+const openclawValues = reactive<Record<string, string | number | boolean>>({})
 
-const gatewayTagType = computed(() => {
-  switch (summary.value?.gateway_status.state) {
+const isBaseWorkspace = computed(() => summary.value?.workspace.workspace_type === 'base')
+const runtimeStatus = computed(() => {
+  if (!summary.value) {
+    return null
+  }
+  return isBaseWorkspace.value ? summary.value.gateway_status ?? null : summary.value.openclaw_status ?? null
+})
+
+const runtimeTagType = computed(() => {
+  switch (runtimeStatus.value?.state) {
     case 'running':
       return 'success'
     case 'error':
@@ -183,6 +290,12 @@ const gatewayTagType = computed(() => {
       return 'default'
   }
 })
+
+function clearRecord(target: Record<string, unknown>) {
+  for (const key of Object.keys(target)) {
+    delete target[key]
+  }
+}
 
 function channelBooleanValue(sectionKey: string, fieldKey: string): boolean {
   return Boolean(nanobotValues[sectionKey]?.[fieldKey])
@@ -233,15 +346,56 @@ function updateGatewayText(fieldKey: string, value: string | null) {
   gatewayValues[fieldKey] = value ?? ''
 }
 
+function openclawBooleanValue(fieldKey: string): boolean {
+  return Boolean(openclawValues[fieldKey])
+}
+
+function openclawNumberValue(fieldKey: string): number | null {
+  const value = openclawValues[fieldKey]
+  return typeof value === 'number' ? value : null
+}
+
+function openclawTextValue(fieldKey: string): string | null {
+  const value = openclawValues[fieldKey]
+  return typeof value === 'string' ? value : null
+}
+
+function updateOpenClawBoolean(fieldKey: string, value: boolean) {
+  openclawValues[fieldKey] = value
+}
+
+function updateOpenClawNumber(fieldKey: string, value: number | null) {
+  openclawValues[fieldKey] = value ?? 0
+}
+
+function updateOpenClawText(fieldKey: string, value: string | null) {
+  openclawValues[fieldKey] = value ?? ''
+}
+
 function hydrateForms(payload: WorkspaceSummary) {
   workspaceName.value = payload.workspace.name
-  for (const [section, values] of Object.entries(payload.nanobot_config.values)) {
-    nanobotValues[section] = { ...(values as Record<string, string | boolean>) }
+
+  for (const key of Object.keys(nanobotValues)) {
+    delete nanobotValues[key]
   }
-  for (const key of Object.keys(gatewayValues)) {
-    delete gatewayValues[key]
+  if (payload.nanobot_config) {
+    for (const [section, values] of Object.entries(payload.nanobot_config.values)) {
+      nanobotValues[section] = { ...(values as Record<string, string | boolean>) }
+    }
   }
-  Object.assign(gatewayValues, payload.gateway_config.values)
+
+  clearRecord(gatewayValues)
+  if (payload.gateway_config) {
+    Object.assign(gatewayValues, payload.gateway_config.values)
+  }
+
+  clearRecord(openclawValues)
+  if (payload.openclaw_config) {
+    Object.assign(openclawValues, payload.openclaw_config.values)
+    openclawRawJson.value = payload.openclaw_config.raw_json5
+  } else {
+    openclawRawJson.value = ''
+  }
 }
 
 async function refreshSummary() {
@@ -290,16 +444,39 @@ async function handleSaveGateway() {
   }
 }
 
-async function handleGatewayAction(action: 'start' | 'stop' | 'restart') {
+async function handleSaveOpenClaw() {
+  savingOpenClaw.value = true
   try {
-    if (action === 'start') {
-      await startGateway(workspaceId.value)
-    } else if (action === 'stop') {
-      await stopGateway(workspaceId.value)
+    await saveOpenClawConfig(workspaceId.value, openclawValues, openclawRawJson.value)
+    message.success('OpenClaw config saved')
+    await refreshSummary()
+  } catch (error) {
+    message.error(getErrorMessage(error))
+  } finally {
+    savingOpenClaw.value = false
+  }
+}
+
+async function handleRuntimeAction(action: 'start' | 'stop' | 'restart') {
+  try {
+    if (isBaseWorkspace.value) {
+      if (action === 'start') {
+        await startGateway(workspaceId.value)
+      } else if (action === 'stop') {
+        await stopGateway(workspaceId.value)
+      } else {
+        await restartGateway(workspaceId.value)
+      }
     } else {
-      await restartGateway(workspaceId.value)
+      if (action === 'start') {
+        await startOpenClaw(workspaceId.value)
+      } else if (action === 'stop') {
+        await stopOpenClaw(workspaceId.value)
+      } else {
+        await restartOpenClaw(workspaceId.value)
+      }
     }
-    message.success(`Gateway ${action} command sent`)
+    message.success(`Runtime ${action} command sent`)
     await refreshSummary()
   } catch (error) {
     message.error(getErrorMessage(error))

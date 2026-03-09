@@ -43,5 +43,9 @@ def get_gateway_manager(request: Request):
     return request.app.state.gateway_manager
 
 
+def get_openclaw_manager(request: Request):
+    return request.app.state.openclaw_manager
+
+
 def get_app_settings():
     return get_settings()

@@ -1,0 +1,29 @@
+{
+  "gateway": {
+    "port": 7331
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "~/.openclaw/workspace",
+      "model": {
+        "primary": "gpt-4.1",
+        "fallbacks": []
+      },
+      "sandbox": {
+        "mode": "workspace-write"
+      }
+    }
+  },
+  "session": {
+    "dmScope": "workspace"
+  },
+  "hooks": {
+    "enabled": false,
+    "path": ".openclaw/hooks.js",
+    "token": ""
+  },
+  "cron": {
+    "enabled": false,
+    "maxConcurrentRuns": 1
+  }
+}

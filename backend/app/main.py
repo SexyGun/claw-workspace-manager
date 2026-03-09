@@ -17,6 +17,7 @@ from app.db import Base, SessionLocal, engine
 from app.models import User
 from app.services.auth import create_user
 from app.services.gateway import build_gateway_manager
+from app.services.openclaw_runtime import build_openclaw_runtime_manager
 from app.services.workspace import ensure_workspace_roots
 
 
@@ -47,12 +48,15 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_bootstrap_admin()
     gateway_manager = build_gateway_manager(settings)
+    openclaw_manager = build_openclaw_runtime_manager(settings)
     db = SessionLocal()
     try:
         gateway_manager.sync_managed_containers(db)
+        openclaw_manager.sync_managed_containers(db)
     finally:
         db.close()
     app.state.gateway_manager = gateway_manager
+    app.state.openclaw_manager = openclaw_manager
     yield
 
 
@@ -75,6 +79,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(users.router, prefix=settings.api_prefix)
+app.include_router(workspaces.workspace_type_router, prefix=settings.api_prefix)
 app.include_router(workspaces.router, prefix=settings.api_prefix)
 
 

@@ -6,11 +6,18 @@ export interface User {
   created_at: string
 }
 
+export interface WorkspaceType {
+  key: 'base' | 'openclaw'
+  label: string
+  description: string
+}
+
 export interface Workspace {
   id: number
   owner_user_id: number
   name: string
   slug: string
+  workspace_type: 'base' | 'openclaw'
   host_path: string
   template_version: string
   status: string
@@ -20,9 +27,10 @@ export interface Workspace {
 export interface ConfigField {
   key: string
   label: string
-  type: 'boolean' | 'text' | 'password' | 'number' | 'select'
+  type: 'boolean' | 'text' | 'password' | 'number' | 'select' | 'textarea'
   sensitive?: boolean
   options?: string[]
+  placeholder?: string
 }
 
 export interface ChannelSchemaSection {
@@ -37,20 +45,24 @@ export interface ChannelSchema {
   sections: ChannelSchemaSection[]
 }
 
-export interface GatewaySchema {
+export interface FlatSchema {
   title: string
   type: string
   fields: ConfigField[]
 }
 
-export interface WorkspaceConfigRead<TSchema = ChannelSchema | GatewaySchema, TValue = Record<string, unknown>> {
+export interface WorkspaceConfigRead<TSchema = ChannelSchema | FlatSchema, TValue = Record<string, unknown>> {
   schema: TSchema
   values: TValue
   rendered_path: string
   rendered_at: string | null
 }
 
-export interface GatewayStatus {
+export interface OpenClawConfigRead extends WorkspaceConfigRead<FlatSchema> {
+  raw_json5: string
+}
+
+export interface RuntimeStatus {
   state: string
   container_name: string
   last_container_id: string | null
@@ -61,7 +73,9 @@ export interface GatewayStatus {
 
 export interface WorkspaceSummary {
   workspace: Workspace
-  nanobot_config: WorkspaceConfigRead<ChannelSchema>
-  gateway_config: WorkspaceConfigRead<GatewaySchema>
-  gateway_status: GatewayStatus
+  nanobot_config?: WorkspaceConfigRead<ChannelSchema> | null
+  gateway_config?: WorkspaceConfigRead<FlatSchema> | null
+  gateway_status?: RuntimeStatus | null
+  openclaw_config?: OpenClawConfigRead | null
+  openclaw_status?: RuntimeStatus | null
 }

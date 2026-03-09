@@ -94,6 +94,7 @@ class DockerGatewayManager(GatewayManager):
     def _labels(self, workspace: models.Workspace) -> dict[str, str]:
         return {
             "claw.managed": "true",
+            "claw.runtime": "gateway",
             "claw.workspace_id": str(workspace.id),
             "claw.owner_user_id": str(workspace.owner_user_id),
         }
@@ -169,7 +170,7 @@ class DockerGatewayManager(GatewayManager):
             )
 
     def sync_managed_containers(self, db: Session) -> None:
-        containers = self.client.containers.list(all=True, filters={"label": "claw.managed=true"})
+        containers = self.client.containers.list(all=True, filters={"label": ["claw.managed=true", "claw.runtime=gateway"]})
         workspace_map = {workspace.id: workspace for workspace in db.query(models.Workspace).all()}
         for container in containers:
             workspace_id = container.labels.get("claw.workspace_id")

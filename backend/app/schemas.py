@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.constants import GATEWAY_STATE_STOPPED, USER_ROLE_ADMIN, USER_ROLE_USER
+from app.constants import GATEWAY_STATE_STOPPED, USER_ROLE_USER, WORKSPACE_TYPE_BASE, WORKSPACE_TYPE_OPENCLAW
 
 
 class MessageResponse(BaseModel):
@@ -23,8 +23,8 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    role: Literal["admin", "user"] | None = None
-    is_active: bool | None = None
+    role: Optional[Literal["admin", "user"]] = None
+    is_active: Optional[bool] = None
 
 
 class UserResetPassword(BaseModel):
@@ -52,13 +52,20 @@ class AuthMeResponse(BaseModel):
     is_active: bool = True
 
 
+class WorkspaceTypeRead(BaseModel):
+    key: Literal["base", "openclaw"]
+    label: str
+    description: str
+
+
 class WorkspaceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
+    workspace_type: Literal["base", "openclaw"] = WORKSPACE_TYPE_BASE
 
 
 class WorkspaceUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=128)
-    status: str | None = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    status: Optional[str] = None
 
 
 class WorkspaceRead(BaseModel):
@@ -68,6 +75,7 @@ class WorkspaceRead(BaseModel):
     owner_user_id: int
     name: str
     slug: str
+    workspace_type: Literal["base", "openclaw"] = WORKSPACE_TYPE_BASE
     host_path: str
     template_version: str
     status: str
@@ -84,20 +92,37 @@ class WorkspaceConfigRead(BaseModel):
     schema_payload: dict[str, Any] = Field(alias="schema", serialization_alias="schema")
     values: dict[str, Any]
     rendered_path: str
-    rendered_at: datetime | None = None
+    rendered_at: Optional[datetime] = None
 
 
-class GatewayStatusResponse(BaseModel):
+class OpenClawConfigPayload(BaseModel):
+    structured_values: dict[str, Any] = Field(default_factory=dict)
+    raw_json5: Optional[str] = None
+
+
+class OpenClawConfigRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_payload: dict[str, Any] = Field(alias="schema", serialization_alias="schema")
+    values: dict[str, Any]
+    raw_json5: str
+    rendered_path: str
+    rendered_at: Optional[datetime] = None
+
+
+class RuntimeStatusResponse(BaseModel):
     state: str = GATEWAY_STATE_STOPPED
     container_name: str
-    last_container_id: str | None = None
-    last_error: str | None = None
-    started_at: datetime | None = None
-    stopped_at: datetime | None = None
+    last_container_id: Optional[str] = None
+    last_error: Optional[str] = None
+    started_at: Optional[datetime] = None
+    stopped_at: Optional[datetime] = None
 
 
 class WorkspaceSummary(BaseModel):
     workspace: WorkspaceRead
-    nanobot_config: WorkspaceConfigRead
-    gateway_config: WorkspaceConfigRead
-    gateway_status: GatewayStatusResponse
+    nanobot_config: Optional[WorkspaceConfigRead] = None
+    gateway_config: Optional[WorkspaceConfigRead] = None
+    gateway_status: Optional[RuntimeStatusResponse] = None
+    openclaw_config: Optional[OpenClawConfigRead] = None
+    openclaw_status: Optional[RuntimeStatusResponse] = None

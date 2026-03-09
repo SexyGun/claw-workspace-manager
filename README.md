@@ -13,9 +13,11 @@ Dockerized multi-user workspace manager for a single Linux host.
 - Local username/password authentication with `admin` and `user` roles
 - Admin-managed user lifecycle
 - Multiple workspaces per user
-- Workspace bootstrap from a server-side template directory
+- Base and OpenClaw workspace types
+- Workspace bootstrap from server-side template directories
 - Generated `.nanobot/config.json` and `.nanobot/gateway.yaml`
-- Docker-based gateway start, stop, restart, and status tracking
+- Generated `.openclaw/openclaw.json` with raw + structured editing
+- Docker-based gateway and openclaw runtime start, stop, restart, and status tracking
 
 ## Repository Layout
 
@@ -73,5 +75,5 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 ## Notes
 
 - The manager container needs access to `/var/run/docker.sock`, so deploy it only on a trusted single-tenant host.
-- `HOST_WORKSPACE_ROOT` is used when the manager asks Docker to mount a workspace into a gateway container.
-- The current gateway flow assumes the configured `GATEWAY_IMAGE` already knows how to start using the mounted config files.
+- `HOST_WORKSPACE_ROOT` is used when the manager asks Docker to mount a workspace into gateway or openclaw runtime containers.
+- The current runtime flow assumes `GATEWAY_IMAGE` and `OPENCLAW_IMAGE` already know how to start using the mounted config files.

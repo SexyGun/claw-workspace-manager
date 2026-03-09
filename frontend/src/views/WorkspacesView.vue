@@ -6,7 +6,7 @@
           <div>
             <div class="eyebrow">Workspace inventory</div>
             <h2>All workspaces you can operate</h2>
-            <n-text depth="3">Create isolated workspaces, render `.nanobot/config.json`, and operate gateway containers.</n-text>
+            <n-text depth="3">Create isolated base or openclaw workspaces, then manage their config and runtime.</n-text>
           </div>
           <n-button type="primary" @click="showCreate = true">New Workspace</n-button>
         </n-space>
@@ -16,7 +16,12 @@
         <n-grid-item v-for="workspace in workspaces" :key="workspace.id">
           <router-link :to="`/workspaces/${workspace.id}`">
             <n-card hoverable class="workspace-card">
-              <n-tag type="warning" size="small">{{ workspace.status }}</n-tag>
+              <n-space justify="space-between" align="center">
+                <n-tag type="warning" size="small">{{ workspace.status }}</n-tag>
+                <n-tag :type="workspace.workspace_type === 'openclaw' ? 'info' : 'success'" size="small">
+                  {{ workspace.workspace_type }}
+                </n-tag>
+              </n-space>
               <h3>{{ workspace.name }}</h3>
               <p>{{ workspace.slug }}</p>
               <n-text depth="3">{{ workspace.host_path }}</n-text>
@@ -26,11 +31,20 @@
       </n-grid>
     </n-space>
 
-    <n-modal v-model:show="showCreate" preset="card" title="Create workspace" style="width: 420px">
+    <n-modal v-model:show="showCreate" preset="card" title="Create workspace" style="width: 460px">
       <n-form :model="form">
         <n-form-item label="Name">
           <n-input v-model:value="form.name" placeholder="Alpha Workspace" />
         </n-form-item>
+        <n-form-item label="Workspace Type">
+          <n-select
+            v-model:value="form.workspace_type"
+            :options="workspaceTypeOptions"
+            label-field="label"
+            value-field="value"
+          />
+        </n-form-item>
+        <n-text depth="3">{{ selectedWorkspaceTypeDescription }}</n-text>
         <n-button type="primary" block :loading="saving" @click="handleCreate">Create</n-button>
       </n-form>
     </n-modal>
@@ -38,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   NButton,
   NCard,
@@ -48,6 +62,7 @@ import {
   NGridItem,
   NInput,
   NModal,
+  NSelect,
   NSpace,
   NTag,
   NText,
@@ -56,17 +71,38 @@ import {
 import { useRouter } from 'vue-router'
 
 import AppShell from '../components/AppShell.vue'
-import { createWorkspace, getErrorMessage, listWorkspaces } from '../api'
-import type { Workspace } from '../types'
+import { createWorkspace, getErrorMessage, listWorkspaceTypes, listWorkspaces } from '../api'
+import type { Workspace, WorkspaceType } from '../types'
 
 const message = useMessage()
 const router = useRouter()
 const showCreate = ref(false)
 const saving = ref(false)
 const workspaces = ref<Workspace[]>([])
+const workspaceTypes = ref<WorkspaceType[]>([])
 const form = reactive({
   name: '',
+  workspace_type: 'base' as 'base' | 'openclaw',
 })
+
+const workspaceTypeOptions = computed(() =>
+  workspaceTypes.value.map((type) => ({
+    label: type.label,
+    value: type.key,
+  })),
+)
+
+const selectedWorkspaceTypeDescription = computed(() => {
+  return workspaceTypes.value.find((type) => type.key === form.workspace_type)?.description ?? ''
+})
+
+async function loadWorkspaceTypes() {
+  try {
+    workspaceTypes.value = await listWorkspaceTypes()
+  } catch (error) {
+    message.error(getErrorMessage(error))
+  }
+}
 
 async function loadWorkspaces() {
   try {
@@ -79,8 +115,9 @@ async function loadWorkspaces() {
 async function handleCreate() {
   saving.value = true
   try {
-    const workspace = await createWorkspace(form.name)
+    const workspace = await createWorkspace(form.name, form.workspace_type)
     form.name = ''
+    form.workspace_type = 'base'
     showCreate.value = false
     message.success('Workspace created')
     await loadWorkspaces()
@@ -93,6 +130,7 @@ async function handleCreate() {
 }
 
 onMounted(() => {
+  void loadWorkspaceTypes()
   void loadWorkspaces()
 })
 </script>

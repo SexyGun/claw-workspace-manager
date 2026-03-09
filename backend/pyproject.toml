@@ -5,12 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "claw-workspace-manager-backend"
 version = "0.1.0"
-description = "Dockerized workspace manager backend"
+description = "Native workspace manager backend"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "alembic>=1.14,<2.0",
-  "docker>=7.1,<8.0",
   "eval_type_backport>=0.2,<1.0",
   "fastapi>=0.115,<1.0",
   "itsdangerous>=2.2,<3.0",

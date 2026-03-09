@@ -1,0 +1,16 @@
+# Adjust the username and systemctl path for your host before installing.
+
+Cmnd_Alias CLAW_OPENCLAW = \
+    /usr/bin/systemctl start claw-openclaw.service, \
+    /usr/bin/systemctl stop claw-openclaw.service, \
+    /usr/bin/systemctl restart claw-openclaw.service, \
+    /usr/bin/systemctl reload claw-openclaw.service, \
+    /usr/bin/systemctl show claw-openclaw.service *
+
+Cmnd_Alias CLAW_NANOBOT = \
+    /usr/bin/systemctl start claw-nanobot@*.service, \
+    /usr/bin/systemctl stop claw-nanobot@*.service, \
+    /usr/bin/systemctl restart claw-nanobot@*.service, \
+    /usr/bin/systemctl show claw-nanobot@*.service *
+
+claw-manager ALL=(root) NOPASSWD: CLAW_OPENCLAW, CLAW_NANOBOT

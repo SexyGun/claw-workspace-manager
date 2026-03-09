@@ -97,28 +97,23 @@ export async function saveGatewayConfig(workspaceId: number, values: Record<stri
   return response.data
 }
 
-export async function fetchGatewayStatus(workspaceId: number): Promise<RuntimeStatus> {
-  const response = await api.get<RuntimeStatus>(`/workspaces/${workspaceId}/gateway/status`)
+export async function fetchWorkspaceRuntime(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.get<RuntimeStatus>(`/workspaces/${workspaceId}/runtime`)
   return response.data
 }
 
-export async function startGateway(workspaceId: number): Promise<RuntimeStatus> {
-  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/gateway/start`)
+export async function startWorkspaceRuntime(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/runtime/start`)
   return response.data
 }
 
-export async function stopGateway(workspaceId: number): Promise<RuntimeStatus> {
-  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/gateway/stop`)
+export async function stopWorkspaceRuntime(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/runtime/stop`)
   return response.data
 }
 
-export async function restartGateway(workspaceId: number): Promise<RuntimeStatus> {
-  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/gateway/restart`)
-  return response.data
-}
-
-export async function fetchOpenClawConfig(workspaceId: number): Promise<OpenClawConfigRead> {
-  const response = await api.get<OpenClawConfigRead>(`/workspaces/${workspaceId}/openclaw-config`)
+export async function restartWorkspaceRuntime(workspaceId: number): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/runtime/restart`)
   return response.data
 }
 
@@ -134,22 +129,30 @@ export async function saveOpenClawConfig(
   return response.data
 }
 
-export async function fetchOpenClawStatus(workspaceId: number): Promise<RuntimeStatus> {
-  const response = await api.get<RuntimeStatus>(`/workspaces/${workspaceId}/openclaw/status`)
+export async function saveOpenClawChannelConfig(
+  workspaceId: number,
+  values: Record<string, unknown>,
+): Promise<WorkspaceConfigRead> {
+  const response = await api.put<WorkspaceConfigRead>(`/workspaces/${workspaceId}/openclaw-channel-config`, { values })
   return response.data
 }
 
-export async function startOpenClaw(workspaceId: number): Promise<RuntimeStatus> {
-  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/openclaw/start`)
+export async function fetchOpenClawServiceStatus(): Promise<RuntimeStatus> {
+  const response = await api.get<RuntimeStatus>('/runtime/openclaw/service')
   return response.data
 }
 
-export async function stopOpenClaw(workspaceId: number): Promise<RuntimeStatus> {
-  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/openclaw/stop`)
+export async function startOpenClawService(): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>('/runtime/openclaw/service/start')
   return response.data
 }
 
-export async function restartOpenClaw(workspaceId: number): Promise<RuntimeStatus> {
-  const response = await api.post<RuntimeStatus>(`/workspaces/${workspaceId}/openclaw/restart`)
+export async function stopOpenClawService(): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>('/runtime/openclaw/service/stop')
+  return response.data
+}
+
+export async function restartOpenClawService(): Promise<RuntimeStatus> {
+  const response = await api.post<RuntimeStatus>('/runtime/openclaw/service/restart')
   return response.data
 }

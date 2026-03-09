@@ -19,18 +19,29 @@ def test_workspace_creation_renders_configs(client: TestClient, app_env):
     workspace = create_response.json()
     assert workspace["workspace_type"] == "base"
 
+    second_response = client.post("/api/workspaces", json={"name": "Alice Secondary"})
+    assert second_response.status_code == 201, second_response.text
+
     detail_response = client.get(f"/api/workspaces/{workspace['id']}")
     assert detail_response.status_code == 200
+    detail = detail_response.json()
 
     local_root = Path(app_env["workspaces_local"])
+    runtime_root = Path(app_env["runtime_root"])
     config_path = local_root / "2" / "alice-primary" / ".nanobot" / "config.json"
     gateway_path = local_root / "2" / "alice-primary" / ".nanobot" / "gateway.yaml"
+    runtime_gateway_path = runtime_root / "nanobot" / str(workspace["id"]) / "gateway.yaml"
     assert config_path.exists()
     assert gateway_path.exists()
+    assert runtime_gateway_path.exists()
 
     config_payload = json.loads(config_path.read_text(encoding="utf-8"))
     assert config_payload["workspace"]["slug"] == "alice-primary"
     assert "feishu" in config_payload["channels"]
+    assert detail["runtime_status"]["listen_port"] == 18080
+
+    second_detail = client.get(f"/api/workspaces/{second_response.json()['id']}").json()
+    assert second_detail["runtime_status"]["listen_port"] == 18081
 
     workspace_types_response = client.get("/api/workspace-types")
     assert workspace_types_response.status_code == 200

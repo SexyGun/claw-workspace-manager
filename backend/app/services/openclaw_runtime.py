@@ -1,300 +1,180 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
 
-import docker
-from docker.errors import APIError, DockerException, NotFound
 from sqlalchemy.orm import Session
 
 from app import models
 from app.config import Settings
 from app.constants import (
-    GATEWAY_STATE_ERROR,
-    GATEWAY_STATE_RUNNING,
-    GATEWAY_STATE_STARTING,
-    GATEWAY_STATE_STOPPED,
-    GATEWAY_STATE_STOPPING,
+    RUNTIME_CONTROLLER_SYSTEMD,
+    RUNTIME_KIND_OPENCLAW,
+    RUNTIME_SCOPE_SHARED,
+    RUNTIME_STATE_ERROR,
+    RUNTIME_STATE_RUNNING,
+    RUNTIME_STATE_STOPPED,
+    SHARED_RUNTIME_KEY_OPENCLAW,
 )
-
-
-@dataclass
-class OpenClawRuntimeState:
-    state: str
-    container_name: str
-    container_id: Optional[str] = None
-    last_error: Optional[str] = None
-    started_at: Optional[datetime] = None
-    stopped_at: Optional[datetime] = None
+from app.services.runtime_control import (
+    NullController,
+    RuntimeControlError,
+    RuntimeStatus,
+    SystemdController,
+    SystemdUnitStatus,
+    build_systemd_controller,
+)
 
 
 class OpenClawRuntimeManager:
     def sync_managed_containers(self, db: Session) -> None:
         raise NotImplementedError
 
-    def start(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
+    def service_status(self, db: Session) -> RuntimeStatus:
         raise NotImplementedError
 
-    def stop(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
+    def service_start(self, db: Session) -> RuntimeStatus:
         raise NotImplementedError
 
-    def restart(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
+    def service_stop(self, db: Session) -> RuntimeStatus:
         raise NotImplementedError
 
-    def status(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
+    def service_restart(self, db: Session) -> RuntimeStatus:
+        raise NotImplementedError
+
+    def reload_if_running(self, db: Session) -> RuntimeStatus:
         raise NotImplementedError
 
 
-class NullOpenClawRuntimeManager(OpenClawRuntimeManager):
-    def sync_managed_containers(self, db: Session) -> None:
-        return None
-
-    def start(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
-        instance = workspace.openclaw_instance
-        assert instance is not None
-        instance.state = GATEWAY_STATE_ERROR
-        instance.last_error = "docker is not available"
-        db.add(instance)
-        db.commit()
-        return OpenClawRuntimeState(state=instance.state, container_name=instance.container_name, last_error=instance.last_error)
-
-    def stop(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
-        instance = workspace.openclaw_instance
-        assert instance is not None
-        instance.state = GATEWAY_STATE_STOPPED
-        db.add(instance)
-        db.commit()
-        return OpenClawRuntimeState(state=instance.state, container_name=instance.container_name, last_error=instance.last_error)
-
-    def restart(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
-        return self.start(db, workspace)
-
-    def status(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
-        instance = workspace.openclaw_instance
-        assert instance is not None
-        return OpenClawRuntimeState(
-            state=instance.state,
-            container_name=instance.container_name,
-            container_id=instance.last_container_id,
-            last_error=instance.last_error,
-            started_at=instance.started_at,
-            stopped_at=instance.stopped_at,
-        )
-
-
-class DockerOpenClawRuntimeManager(OpenClawRuntimeManager):
-    def __init__(self, settings: Settings):
+class NativeOpenClawRuntimeManager(OpenClawRuntimeManager):
+    def __init__(self, settings: Settings, controller: SystemdController | NullController):
         self.settings = settings
-        self.client = docker.from_env()
+        self.controller = controller
 
-    def _labels(self, workspace: models.Workspace) -> dict[str, str]:
-        return {
-            "claw.managed": "true",
-            "claw.runtime": "openclaw",
-            "claw.workspace_id": str(workspace.id),
-            "claw.owner_user_id": str(workspace.owner_user_id),
-        }
+    def sync_managed_containers(self, db: Session) -> None:
+        self.service_status(db)
 
-    def _save_state(self, db: Session, workspace: models.Workspace, runtime: OpenClawRuntimeState) -> OpenClawRuntimeState:
-        instance = workspace.openclaw_instance
-        assert instance is not None
-        instance.container_name = runtime.container_name
-        instance.image = self.settings.openclaw_image
-        instance.state = runtime.state
-        instance.last_container_id = runtime.container_id
-        instance.last_error = runtime.last_error
-        instance.started_at = runtime.started_at
-        instance.stopped_at = runtime.stopped_at
-        db.add(instance)
-        db.commit()
-        db.refresh(instance)
+    def service_status(self, db: Session) -> RuntimeStatus:
+        runtime = self._get_or_create_runtime(db)
+        try:
+            unit_status = self.controller.status(runtime.unit_name)
+            return self._save_status(db, runtime, unit_status)
+        except RuntimeControlError as exc:
+            return self._save_error(db, runtime, str(exc))
+
+    def service_start(self, db: Session) -> RuntimeStatus:
+        runtime = self._get_or_create_runtime(db)
+        try:
+            unit_status = self.controller.start(runtime.unit_name)
+            runtime.needs_restart = False
+            return self._save_status(db, runtime, unit_status)
+        except RuntimeControlError as exc:
+            return self._save_error(db, runtime, str(exc))
+
+    def service_stop(self, db: Session) -> RuntimeStatus:
+        runtime = self._get_or_create_runtime(db)
+        try:
+            unit_status = self.controller.stop(runtime.unit_name)
+            if unit_status.stopped_at is None:
+                unit_status.stopped_at = datetime.now(timezone.utc)
+            runtime.needs_restart = False
+            return self._save_status(db, runtime, unit_status)
+        except RuntimeControlError as exc:
+            return self._save_error(db, runtime, str(exc))
+
+    def service_restart(self, db: Session) -> RuntimeStatus:
+        runtime = self._get_or_create_runtime(db)
+        try:
+            unit_status = self.controller.restart(runtime.unit_name)
+            runtime.needs_restart = False
+            return self._save_status(db, runtime, unit_status)
+        except RuntimeControlError as exc:
+            return self._save_error(db, runtime, str(exc))
+
+    def reload_if_running(self, db: Session) -> RuntimeStatus:
+        runtime = self._get_or_create_runtime(db)
+        current = self.service_status(db)
+        runtime = self._get_or_create_runtime(db)
+        if current.state != RUNTIME_STATE_RUNNING:
+            runtime.needs_restart = True
+            db.add(runtime)
+            db.commit()
+            db.refresh(runtime)
+            return self._to_status(runtime)
+        try:
+            unit_status = self.controller.reload(runtime.unit_name)
+            runtime.needs_restart = False
+            return self._save_status(db, runtime, unit_status)
+        except RuntimeControlError as exc:
+            runtime.needs_restart = True
+            db.add(runtime)
+            db.commit()
+            db.refresh(runtime)
+            return self._save_error(db, runtime, str(exc), keep_restart_flag=True)
+
+    def _get_or_create_runtime(self, db: Session) -> models.SharedRuntime:
+        runtime = db.get(models.SharedRuntime, SHARED_RUNTIME_KEY_OPENCLAW)
+        if runtime is None:
+            runtime = models.SharedRuntime(
+                runtime_key=SHARED_RUNTIME_KEY_OPENCLAW,
+                runtime_kind=RUNTIME_KIND_OPENCLAW,
+                scope=RUNTIME_SCOPE_SHARED,
+                controller_kind=RUNTIME_CONTROLLER_SYSTEMD,
+                unit_name=self.settings.openclaw_shared_unit,
+                state=RUNTIME_STATE_STOPPED,
+            )
+            db.add(runtime)
+            db.commit()
+            db.refresh(runtime)
         return runtime
 
-    def _parse_container_time(self, value: Optional[str]) -> Optional[datetime]:
-        if not value or value.startswith("0001-01-01"):
-            return None
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
+    def _save_status(
+        self,
+        db: Session,
+        runtime: models.SharedRuntime,
+        unit_status: SystemdUnitStatus,
+    ) -> RuntimeStatus:
+        runtime.controller_kind = RUNTIME_CONTROLLER_SYSTEMD
+        runtime.unit_name = unit_status.unit_name
+        runtime.process_id = unit_status.process_id
+        runtime.state = unit_status.state
+        runtime.last_error = None
+        runtime.started_at = unit_status.started_at
+        runtime.stopped_at = unit_status.stopped_at if unit_status.state != RUNTIME_STATE_RUNNING else None
+        db.add(runtime)
+        db.commit()
+        db.refresh(runtime)
+        return self._to_status(runtime)
 
-    def _map_container_state(self, container: Any) -> OpenClawRuntimeState:
-        raw_status = getattr(container, "status", None) or container.attrs.get("State", {}).get("Status", "exited")
-        state = {
-            "created": GATEWAY_STATE_STARTING,
-            "restarting": GATEWAY_STATE_STARTING,
-            "running": GATEWAY_STATE_RUNNING,
-            "exited": GATEWAY_STATE_STOPPED,
-            "dead": GATEWAY_STATE_ERROR,
-            "removing": GATEWAY_STATE_STOPPING,
-            "paused": GATEWAY_STATE_STOPPING,
-        }.get(raw_status, GATEWAY_STATE_ERROR)
-        return OpenClawRuntimeState(
-            state=state,
-            container_name=container.name,
-            container_id=container.id,
-            last_error=container.attrs.get("State", {}).get("Error") or None,
-            started_at=self._parse_container_time(container.attrs.get("State", {}).get("StartedAt")),
-            stopped_at=self._parse_container_time(container.attrs.get("State", {}).get("FinishedAt"))
-            if state != GATEWAY_STATE_RUNNING
-            else None,
+    def _save_error(
+        self,
+        db: Session,
+        runtime: models.SharedRuntime,
+        error: str,
+        *,
+        keep_restart_flag: bool = False,
+    ) -> RuntimeStatus:
+        runtime.state = RUNTIME_STATE_ERROR if not isinstance(self.controller, NullController) else RUNTIME_STATE_STOPPED
+        runtime.last_error = error
+        if not keep_restart_flag:
+            runtime.needs_restart = runtime.needs_restart and runtime.state == RUNTIME_STATE_STOPPED
+        db.add(runtime)
+        db.commit()
+        db.refresh(runtime)
+        return self._to_status(runtime)
+
+    def _to_status(self, runtime: models.SharedRuntime) -> RuntimeStatus:
+        return RuntimeStatus(
+            state=runtime.state,
+            scope=runtime.scope,
+            controller_kind=runtime.controller_kind,
+            unit_name=runtime.unit_name,
+            process_id=runtime.process_id,
+            last_error=runtime.last_error,
+            started_at=runtime.started_at,
+            stopped_at=runtime.stopped_at,
+            needs_restart=runtime.needs_restart,
         )
-
-    def _get_or_create_container(self, workspace: models.Workspace):
-        instance = workspace.openclaw_instance
-        assert instance is not None
-        name = instance.container_name
-        try:
-            return self.client.containers.get(name)
-        except NotFound:
-            return self.client.containers.create(
-                image=self.settings.openclaw_image,
-                name=name,
-                detach=True,
-                labels=self._labels(workspace),
-                working_dir=f"{self.settings.openclaw_workspace_mount}/.openclaw/workspace",
-                environment={
-                    "HOME": self.settings.openclaw_workspace_mount,
-                    "WORKSPACE_ID": str(workspace.id),
-                    "WORKSPACE_NAME": workspace.name,
-                },
-                volumes={
-                    workspace.host_path: {
-                        "bind": self.settings.openclaw_workspace_mount,
-                        "mode": "rw",
-                    }
-                },
-            )
-
-    def sync_managed_containers(self, db: Session) -> None:
-        containers = self.client.containers.list(all=True, filters={"label": ["claw.managed=true", "claw.runtime=openclaw"]})
-        workspace_map = {workspace.id: workspace for workspace in db.query(models.Workspace).all()}
-        for container in containers:
-            workspace_id = container.labels.get("claw.workspace_id")
-            if not workspace_id:
-                continue
-            workspace = workspace_map.get(int(workspace_id))
-            if not workspace or not workspace.openclaw_instance:
-                continue
-            self._save_state(db, workspace, self._map_container_state(container))
-
-    def start(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
-        try:
-            container = self._get_or_create_container(workspace)
-            if container.status != "running":
-                container.start()
-            container.reload()
-            runtime = self._map_container_state(container)
-            if runtime.started_at is None:
-                runtime.started_at = datetime.now(timezone.utc)
-            return self._save_state(db, workspace, runtime)
-        except (APIError, DockerException) as exc:
-            return self._save_state(
-                db,
-                workspace,
-                OpenClawRuntimeState(
-                    state=GATEWAY_STATE_ERROR,
-                    container_name=workspace.openclaw_instance.container_name,  # type: ignore[union-attr]
-                    container_id=workspace.openclaw_instance.last_container_id,  # type: ignore[union-attr]
-                    last_error=str(exc),
-                ),
-            )
-
-    def stop(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
-        instance = workspace.openclaw_instance
-        assert instance is not None
-        try:
-            container = self.client.containers.get(instance.container_name)
-            if container.status == "running":
-                container.stop(timeout=self.settings.gateway_stop_timeout)
-            container.reload()
-            runtime = self._map_container_state(container)
-            if runtime.stopped_at is None:
-                runtime.stopped_at = datetime.now(timezone.utc)
-            return self._save_state(db, workspace, runtime)
-        except NotFound:
-            return self._save_state(
-                db,
-                workspace,
-                OpenClawRuntimeState(
-                    state=GATEWAY_STATE_STOPPED,
-                    container_name=instance.container_name,
-                    stopped_at=datetime.now(timezone.utc),
-                ),
-            )
-        except (APIError, DockerException) as exc:
-            return self._save_state(
-                db,
-                workspace,
-                OpenClawRuntimeState(
-                    state=GATEWAY_STATE_ERROR,
-                    container_name=instance.container_name,
-                    container_id=instance.last_container_id,
-                    last_error=str(exc),
-                ),
-            )
-
-    def restart(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
-        try:
-            container = self._get_or_create_container(workspace)
-            if container.status != "running":
-                container.start()
-            else:
-                container.restart(timeout=self.settings.gateway_stop_timeout)
-            container.reload()
-            runtime = self._map_container_state(container)
-            if runtime.started_at is None:
-                runtime.started_at = datetime.now(timezone.utc)
-            return self._save_state(db, workspace, runtime)
-        except (APIError, DockerException) as exc:
-            instance = workspace.openclaw_instance
-            assert instance is not None
-            return self._save_state(
-                db,
-                workspace,
-                OpenClawRuntimeState(
-                    state=GATEWAY_STATE_ERROR,
-                    container_name=instance.container_name,
-                    container_id=instance.last_container_id,
-                    last_error=str(exc),
-                ),
-            )
-
-    def status(self, db: Session, workspace: models.Workspace) -> OpenClawRuntimeState:
-        instance = workspace.openclaw_instance
-        assert instance is not None
-        try:
-            container = self.client.containers.get(instance.container_name)
-            return self._save_state(db, workspace, self._map_container_state(container))
-        except NotFound:
-            return self._save_state(
-                db,
-                workspace,
-                OpenClawRuntimeState(
-                    state=GATEWAY_STATE_STOPPED,
-                    container_name=instance.container_name,
-                    started_at=instance.started_at,
-                    stopped_at=instance.stopped_at,
-                ),
-            )
-        except (APIError, DockerException) as exc:
-            return self._save_state(
-                db,
-                workspace,
-                OpenClawRuntimeState(
-                    state=GATEWAY_STATE_ERROR,
-                    container_name=instance.container_name,
-                    container_id=instance.last_container_id,
-                    last_error=str(exc),
-                    started_at=instance.started_at,
-                    stopped_at=instance.stopped_at,
-                ),
-            )
 
 
 def build_openclaw_runtime_manager(settings: Settings) -> OpenClawRuntimeManager:
-    try:
-        return DockerOpenClawRuntimeManager(settings)
-    except DockerException:
-        return NullOpenClawRuntimeManager()
+    return NativeOpenClawRuntimeManager(settings, build_systemd_controller(settings))

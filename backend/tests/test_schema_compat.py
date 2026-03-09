@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, text
 from app.schema_compat import ensure_sqlite_schema_compatibility
 
 
-def test_sqlite_schema_compatibility_adds_openclaw_columns_and_table(tmp_path):
+def test_sqlite_schema_compatibility_adds_native_runtime_columns_and_tables(tmp_path):
     db_path = tmp_path / "legacy.db"
     engine = create_engine(f"sqlite:///{db_path}")
 
@@ -49,5 +49,8 @@ def test_sqlite_schema_compatibility_adds_openclaw_columns_and_table(tmp_path):
 
     assert "workspace_type" in workspace_columns
     assert "openclaw_config_json" in config_columns
+    assert "openclaw_channel_json" in config_columns
+    assert "openclaw_binding_json" in config_columns
     assert "openclaw_rendered_at" in config_columns
-    assert "openclaw_instances" in tables
+    assert "workspace_runtimes" in tables
+    assert "shared_runtimes" in tables

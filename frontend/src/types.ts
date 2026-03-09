@@ -31,6 +31,7 @@ export interface ConfigField {
   sensitive?: boolean
   options?: string[]
   placeholder?: string
+  readonly?: boolean
 }
 
 export interface ChannelSchemaSection {
@@ -64,18 +65,31 @@ export interface OpenClawConfigRead extends WorkspaceConfigRead<FlatSchema> {
 
 export interface RuntimeStatus {
   state: string
-  container_name: string
-  last_container_id: string | null
+  scope: string
+  controller_kind: string
+  unit_name: string | null
+  process_id: number | null
+  listen_port: number | null
   last_error: string | null
   started_at: string | null
   stopped_at: string | null
+  needs_restart: boolean
+}
+
+export interface OpenClawRoute {
+  agent_id: string
+  channel: string
+  account_id: string
+  enabled: boolean
 }
 
 export interface WorkspaceSummary {
   workspace: Workspace
   nanobot_config?: WorkspaceConfigRead<ChannelSchema> | null
   gateway_config?: WorkspaceConfigRead<FlatSchema> | null
-  gateway_status?: RuntimeStatus | null
+  runtime_status?: RuntimeStatus | null
   openclaw_config?: OpenClawConfigRead | null
-  openclaw_status?: RuntimeStatus | null
+  openclaw_channel_config?: WorkspaceConfigRead<FlatSchema> | null
+  openclaw_route?: OpenClawRoute | null
+  shared_runtime_status?: RuntimeStatus | null
 }

@@ -7,7 +7,13 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
-from app.constants import WORKSPACE_TYPE_BASE
+from app.constants import (
+    RUNTIME_CONTROLLER_SYSTEMD,
+    RUNTIME_KIND_NANOBOT,
+    RUNTIME_SCOPE_SHARED,
+    RUNTIME_SCOPE_WORKSPACE,
+    WORKSPACE_TYPE_BASE,
+)
 
 
 class TimestampMixin:
@@ -45,12 +51,7 @@ class Workspace(TimestampMixin, Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
-    gateway_instance: Mapped["GatewayInstance"] = relationship(
-        back_populates="workspace",
-        cascade="all, delete-orphan",
-        uselist=False,
-    )
-    openclaw_instance: Mapped["OpenClawInstance"] = relationship(
+    runtime: Mapped[Optional["WorkspaceRuntime"]] = relationship(
         back_populates="workspace",
         cascade="all, delete-orphan",
         uselist=False,
@@ -64,6 +65,8 @@ class WorkspaceConfig(Base):
     channel_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     gateway_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     openclaw_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    openclaw_channel_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    openclaw_binding_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     nanobot_rendered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     gateway_rendered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     openclaw_rendered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -71,31 +74,36 @@ class WorkspaceConfig(Base):
     workspace: Mapped["Workspace"] = relationship(back_populates="config")
 
 
-class GatewayInstance(Base):
-    __tablename__ = "gateway_instances"
+class WorkspaceRuntime(Base):
+    __tablename__ = "workspace_runtimes"
 
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
-    container_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    image: Mapped[str] = mapped_column(String(255), nullable=False)
+    runtime_kind: Mapped[str] = mapped_column(String(32), nullable=False, default=RUNTIME_KIND_NANOBOT)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default=RUNTIME_SCOPE_WORKSPACE)
+    controller_kind: Mapped[str] = mapped_column(String(32), nullable=False, default=RUNTIME_CONTROLLER_SYSTEMD)
+    unit_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    process_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    listen_port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, unique=True)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="stopped")
-    last_container_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    needs_restart: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    workspace: Mapped["Workspace"] = relationship(back_populates="gateway_instance")
+    workspace: Mapped["Workspace"] = relationship(back_populates="runtime")
 
 
-class OpenClawInstance(Base):
-    __tablename__ = "openclaw_instances"
+class SharedRuntime(Base):
+    __tablename__ = "shared_runtimes"
 
-    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
-    container_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    image: Mapped[str] = mapped_column(String(255), nullable=False)
+    runtime_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    runtime_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="openclaw")
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default=RUNTIME_SCOPE_SHARED)
+    controller_kind: Mapped[str] = mapped_column(String(32), nullable=False, default=RUNTIME_CONTROLLER_SYSTEMD)
+    unit_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    process_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     state: Mapped[str] = mapped_column(String(32), nullable=False, default="stopped")
-    last_container_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     stopped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    workspace: Mapped["Workspace"] = relationship(back_populates="openclaw_instance")
+    needs_restart: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

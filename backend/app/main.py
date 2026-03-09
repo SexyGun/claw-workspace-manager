@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api import auth, users, workspaces
+from app.api import auth, runtime, users, workspaces
 from app.config import get_settings
 from app.constants import USER_ROLE_ADMIN
 from app.db import Base, SessionLocal, engine
@@ -83,6 +83,7 @@ app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(users.router, prefix=settings.api_prefix)
 app.include_router(workspaces.workspace_type_router, prefix=settings.api_prefix)
 app.include_router(workspaces.router, prefix=settings.api_prefix)
+app.include_router(runtime.router, prefix=settings.api_prefix)
 
 
 @app.get(f"{settings.api_prefix}/health")

@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.constants import GATEWAY_STATE_STOPPED, USER_ROLE_USER, WORKSPACE_TYPE_BASE, WORKSPACE_TYPE_OPENCLAW
+from app.constants import RUNTIME_STATE_STOPPED, USER_ROLE_USER, WORKSPACE_TYPE_BASE, WORKSPACE_TYPE_OPENCLAW
 
 
 class MessageResponse(BaseModel):
@@ -100,6 +100,10 @@ class OpenClawConfigPayload(BaseModel):
     raw_json5: Optional[str] = None
 
 
+class OpenClawChannelConfigPayload(BaseModel):
+    values: dict[str, Any]
+
+
 class OpenClawConfigRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -111,18 +115,31 @@ class OpenClawConfigRead(BaseModel):
 
 
 class RuntimeStatusResponse(BaseModel):
-    state: str = GATEWAY_STATE_STOPPED
-    container_name: str
-    last_container_id: Optional[str] = None
+    state: str = RUNTIME_STATE_STOPPED
+    scope: str
+    controller_kind: str
+    unit_name: Optional[str] = None
+    process_id: Optional[int] = None
+    listen_port: Optional[int] = None
     last_error: Optional[str] = None
     started_at: Optional[datetime] = None
     stopped_at: Optional[datetime] = None
+    needs_restart: bool = False
+
+
+class OpenClawRouteRead(BaseModel):
+    agent_id: str
+    channel: str
+    account_id: str
+    enabled: bool
 
 
 class WorkspaceSummary(BaseModel):
     workspace: WorkspaceRead
     nanobot_config: Optional[WorkspaceConfigRead] = None
     gateway_config: Optional[WorkspaceConfigRead] = None
-    gateway_status: Optional[RuntimeStatusResponse] = None
+    runtime_status: Optional[RuntimeStatusResponse] = None
     openclaw_config: Optional[OpenClawConfigRead] = None
-    openclaw_status: Optional[RuntimeStatusResponse] = None
+    openclaw_channel_config: Optional[WorkspaceConfigRead] = None
+    openclaw_route: Optional[OpenClawRouteRead] = None
+    shared_runtime_status: Optional[RuntimeStatusResponse] = None

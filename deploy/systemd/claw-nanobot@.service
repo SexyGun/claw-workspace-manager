@@ -1,0 +1,17 @@
+[Unit]
+Description=Claw Nanobot Runtime for workspace %i
+After=network.target
+
+[Service]
+Type=simple
+User=claw
+Group=claw
+Environment=NANOBOT_GATEWAY_BIN=/usr/local/bin/nanobot-gateway
+Environment=CLAW_RUNTIME_ROOT=/srv/claw/runtime
+ExecStart=/bin/sh -lc '"$NANOBOT_GATEWAY_BIN" --config "$CLAW_RUNTIME_ROOT/nanobot/%i/gateway.yaml"'
+Restart=on-failure
+RestartSec=3
+WorkingDirectory=/srv/claw/runtime/nanobot/%i
+
+[Install]
+WantedBy=multi-user.target

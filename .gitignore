@@ -7,3 +7,5 @@ backend/app/static/
 .data/
 backend/.coverage
 backend/app.db
+__pycache__/
+*.pyc

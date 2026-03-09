@@ -1,3 +1,3 @@
 # Claw Workspace Manager Backend
 
-FastAPI backend for the Dockerized workspace manager.
+FastAPI backend for the native workspace manager.

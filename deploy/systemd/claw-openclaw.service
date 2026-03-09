@@ -1,0 +1,18 @@
+[Unit]
+Description=Claw OpenClaw Shared Runtime
+After=network.target
+
+[Service]
+Type=simple
+User=claw
+Group=claw
+Environment=OPENCLAW_BIN=/usr/local/bin/openclaw
+Environment=CLAW_RUNTIME_ROOT=/srv/claw/runtime
+ExecStart=/bin/sh -lc '"$OPENCLAW_BIN" gateway --config "$CLAW_RUNTIME_ROOT/openclaw/openclaw.json"'
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=3
+WorkingDirectory=/srv/claw/runtime/openclaw
+
+[Install]
+WantedBy=multi-user.target

@@ -24,6 +24,8 @@ from app.services.workspace_profiles import get_workspace_profile
 
 
 SLUG_RE = re.compile(r"[^a-z0-9]+")
+LEGACY_NANOBOT_UNIT_TEMPLATE = "{workspace_id.service}"
+NANOBOT_UNIT_PLACEHOLDER = "{workspace_id}"
 
 
 def slugify(value: str) -> str:
@@ -60,6 +62,19 @@ def allocate_workspace_port(db: Session, settings: Settings) -> int:
     return current_max + 1
 
 
+def format_nanobot_unit_name(template: str, workspace_id: int) -> str:
+    normalized = template.strip().replace(LEGACY_NANOBOT_UNIT_TEMPLATE, f"{NANOBOT_UNIT_PLACEHOLDER}.service")
+    if NANOBOT_UNIT_PLACEHOLDER not in normalized:
+        raise ValueError("invalid NANOBOT_UNIT_TEMPLATE: missing '{workspace_id}' placeholder")
+    remainder = normalized.replace(NANOBOT_UNIT_PLACEHOLDER, "", 1)
+    if "{" in remainder or "}" in remainder:
+        raise ValueError("invalid NANOBOT_UNIT_TEMPLATE: unsupported format placeholders")
+    try:
+        return normalized.format(workspace_id=workspace_id)
+    except (AttributeError, IndexError, KeyError, ValueError) as exc:
+        raise ValueError("invalid NANOBOT_UNIT_TEMPLATE") from exc
+
+
 def create_workspace(
     db: Session,
     settings: Settings,
@@ -90,62 +105,67 @@ def create_workspace(
         if local_path.exists():
             shutil.rmtree(local_path, ignore_errors=True)
         raise ValueError(f"failed to initialize workspace: {exc}") from exc
+    try:
+        if workspace_type == WORKSPACE_TYPE_BASE:
+            (local_path / ".nanobot").mkdir(parents=True, exist_ok=True)
+        elif workspace_type == WORKSPACE_TYPE_OPENCLAW:
+            (local_path / ".openclaw" / "workspace").mkdir(parents=True, exist_ok=True)
 
-    if workspace_type == WORKSPACE_TYPE_BASE:
-        (local_path / ".nanobot").mkdir(parents=True, exist_ok=True)
-    elif workspace_type == WORKSPACE_TYPE_OPENCLAW:
-        (local_path / ".openclaw" / "workspace").mkdir(parents=True, exist_ok=True)
-
-    workspace = models.Workspace(
-        owner_user_id=owner.id,
-        name=name,
-        slug=slug,
-        workspace_type=workspace_type,
-        host_path=str(host_path),
-        template_version=profile.template_version,
-        status=WORKSPACE_STATUS_READY,
-    )
-    db.add(workspace)
-    db.flush()
-
-    openclaw_config = {}
-    openclaw_channel_config = {}
-    openclaw_binding_config = {}
-    if workspace_type == WORKSPACE_TYPE_OPENCLAW:
-        openclaw_config = config_renderer.load_openclaw_template_config(local_path / ".openclaw" / "openclaw.json")
-        openclaw_channel_config = config_renderer.default_openclaw_channel_config()
-        openclaw_binding_config = config_renderer.default_openclaw_binding_config()
-    gateway_config = config_renderer.default_gateway_config()
-    if workspace_type == WORKSPACE_TYPE_BASE:
-        gateway_config["listen_host"] = settings.runtime_host
-        gateway_config["listen_port"] = allocate_workspace_port(db, settings)
-
-    workspace_config = models.WorkspaceConfig(
-        workspace=workspace,
-        channel_config_json=config_renderer.default_channel_config() if workspace_type == WORKSPACE_TYPE_BASE else {},
-        gateway_config_json=gateway_config if workspace_type == WORKSPACE_TYPE_BASE else {},
-        openclaw_config_json=openclaw_config,
-        openclaw_channel_json=openclaw_channel_config,
-        openclaw_binding_json=openclaw_binding_config,
-    )
-    db.add(workspace_config)
-
-    if workspace_type == WORKSPACE_TYPE_BASE:
-        db.add(
-            models.WorkspaceRuntime(
-                workspace=workspace,
-                runtime_kind=RUNTIME_KIND_NANOBOT,
-                scope=RUNTIME_SCOPE_WORKSPACE,
-                controller_kind=RUNTIME_CONTROLLER_SYSTEMD,
-                unit_name=settings.nanobot_unit_template.format(workspace_id=workspace.id),
-                listen_port=gateway_config["listen_port"],
-                state=RUNTIME_STATE_STOPPED,
-            )
+        workspace = models.Workspace(
+            owner_user_id=owner.id,
+            name=name,
+            slug=slug,
+            workspace_type=workspace_type,
+            host_path=str(host_path),
+            template_version=profile.template_version,
+            status=WORKSPACE_STATUS_READY,
         )
+        db.add(workspace)
+        db.flush()
 
-    db.commit()
-    db.refresh(workspace)
-    db.refresh(workspace.config)
-    if workspace_type == WORKSPACE_TYPE_BASE and workspace.runtime is not None:
-        db.refresh(workspace.runtime)
-    return workspace
+        openclaw_config = {}
+        openclaw_channel_config = {}
+        openclaw_binding_config = {}
+        if workspace_type == WORKSPACE_TYPE_OPENCLAW:
+            openclaw_config = config_renderer.load_openclaw_template_config(local_path / ".openclaw" / "openclaw.json")
+            openclaw_channel_config = config_renderer.default_openclaw_channel_config()
+            openclaw_binding_config = config_renderer.default_openclaw_binding_config()
+        gateway_config = config_renderer.default_gateway_config()
+        if workspace_type == WORKSPACE_TYPE_BASE:
+            gateway_config["listen_host"] = settings.runtime_host
+            gateway_config["listen_port"] = allocate_workspace_port(db, settings)
+
+        workspace_config = models.WorkspaceConfig(
+            workspace=workspace,
+            channel_config_json=config_renderer.default_channel_config() if workspace_type == WORKSPACE_TYPE_BASE else {},
+            gateway_config_json=gateway_config if workspace_type == WORKSPACE_TYPE_BASE else {},
+            openclaw_config_json=openclaw_config,
+            openclaw_channel_json=openclaw_channel_config,
+            openclaw_binding_json=openclaw_binding_config,
+        )
+        db.add(workspace_config)
+
+        if workspace_type == WORKSPACE_TYPE_BASE:
+            db.add(
+                models.WorkspaceRuntime(
+                    workspace=workspace,
+                    runtime_kind=RUNTIME_KIND_NANOBOT,
+                    scope=RUNTIME_SCOPE_WORKSPACE,
+                    controller_kind=RUNTIME_CONTROLLER_SYSTEMD,
+                    unit_name=format_nanobot_unit_name(settings.nanobot_unit_template, workspace.id),
+                    listen_port=gateway_config["listen_port"],
+                    state=RUNTIME_STATE_STOPPED,
+                )
+            )
+
+        db.commit()
+        db.refresh(workspace)
+        db.refresh(workspace.config)
+        if workspace_type == WORKSPACE_TYPE_BASE and workspace.runtime is not None:
+            db.refresh(workspace.runtime)
+        return workspace
+    except Exception:
+        db.rollback()
+        if local_path.exists():
+            shutil.rmtree(local_path, ignore_errors=True)
+        raise

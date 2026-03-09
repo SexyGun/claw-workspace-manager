@@ -5,6 +5,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+import app.config
+
 from .conftest import login
 
 
@@ -61,3 +63,20 @@ def test_workspace_access_isolation(client: TestClient):
     login(client, "bob", "bob-password-1")
     response = client.get(f"/api/workspaces/{workspace_id}")
     assert response.status_code == 403
+
+
+def test_workspace_creation_invalid_runtime_template_cleans_up_directory(client: TestClient, app_env):
+    settings = app.config.get_settings()
+    original_template = settings.nanobot_unit_template
+    settings.nanobot_unit_template = "claw-nanobot@{workspace_id}.service.{bad}"
+
+    try:
+        login(client, "admin", "admin-password")
+        response = client.post("/api/workspaces", json={"name": "Broken Runtime"})
+        assert response.status_code == 400
+        assert "invalid NANOBOT_UNIT_TEMPLATE" in response.json()["detail"]
+
+        local_root = Path(app_env["workspaces_local"])
+        assert not (local_root / "1" / "broken-runtime").exists()
+    finally:
+        settings.nanobot_unit_template = original_template

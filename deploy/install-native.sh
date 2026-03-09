@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+
+if [ -z "${BASH_VERSION:-}" ]; then
+  printf '[deploy] error: run this script with bash, for example: sudo bash deploy/install-native.sh\n' >&2
+  exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -30,6 +36,10 @@ PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
 NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 OPENCLAW_BIN="${OPENCLAW_BIN:-/usr/local/bin/openclaw}"
 NANOBOT_GATEWAY_BIN="${NANOBOT_GATEWAY_BIN:-/usr/local/bin/nanobot-gateway}"
+PIP_INDEX_URL="${PIP_INDEX_URL:-}"
+PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:-}"
+PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
+PIP_RETRIES="${PIP_RETRIES:-5}"
 
 SQLITE_PATH_DEFAULT="$DATA_ROOT/sqlite/app.db"
 WORKSPACE_ROOT_DEFAULT="$DATA_ROOT/workspaces"
@@ -66,6 +76,36 @@ require_cmd() {
   fi
 }
 
+python_major_minor() {
+  "$PYTHON_BIN" - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+}
+
+check_python_venv_support() {
+  if "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+import ensurepip  # noqa: F401
+import venv  # noqa: F401
+PY
+  then
+    return
+  fi
+
+  local version
+  version="$(python_major_minor)"
+  if command -v apt-get >/dev/null 2>&1; then
+    die "python3 venv support is missing. Install it first with: sudo apt install -y python${version}-venv or sudo apt install -y python3-venv"
+  fi
+  if command -v dnf >/dev/null 2>&1; then
+    die "python3 venv support is missing. Install the matching venv package for Python ${version} with dnf, then rerun this script"
+  fi
+  if command -v yum >/dev/null 2>&1; then
+    die "python3 venv support is missing. Install the matching venv package for Python ${version} with yum, then rerun this script"
+  fi
+  die "python3 venv support is missing. Install the ensurepip/venv package for Python ${version}, then rerun this script"
+}
+
 detect_nologin() {
   if [ -x /usr/sbin/nologin ]; then
     printf '%s\n' /usr/sbin/nologin
@@ -76,6 +116,22 @@ detect_nologin() {
     return
   fi
   printf '%s\n' /usr/bin/false
+}
+
+normalize_nanobot_unit_template() {
+  if [[ "$NANOBOT_UNIT_TEMPLATE" == *"{workspace_id.service}"* ]]; then
+    warn "normalizing legacy NANOBOT_UNIT_TEMPLATE placeholder {workspace_id.service} to {workspace_id}.service"
+    NANOBOT_UNIT_TEMPLATE="${NANOBOT_UNIT_TEMPLATE//\{workspace_id.service\}/\{workspace_id\}.service}"
+  fi
+
+  if [[ "$NANOBOT_UNIT_TEMPLATE" != *"{workspace_id}"* ]]; then
+    die "NANOBOT_UNIT_TEMPLATE must contain the literal placeholder {workspace_id}"
+  fi
+
+  local remainder="${NANOBOT_UNIT_TEMPLATE/\{workspace_id\}/}"
+  if [[ "$remainder" == *"{"* ]] || [[ "$remainder" == *"}"* ]]; then
+    die "NANOBOT_UNIT_TEMPLATE contains unsupported braces; use a value like claw-nanobot@{workspace_id}.service"
+  fi
 }
 
 generate_secret() {
@@ -155,7 +211,20 @@ sync_source_tree() {
 install_backend() {
   log "installing backend dependencies"
   "$PYTHON_BIN" -m venv "$VENV_DIR"
-  "$VENV_DIR/bin/pip" install "$APP_ROOT/backend"
+  local -a pip_args
+  pip_args=(
+    --default-timeout "$PIP_DEFAULT_TIMEOUT"
+    --retries "$PIP_RETRIES"
+  )
+  if [ -n "$PIP_INDEX_URL" ]; then
+    pip_args+=(--index-url "$PIP_INDEX_URL")
+  fi
+  if [ -n "$PIP_EXTRA_INDEX_URL" ]; then
+    pip_args+=(--extra-index-url "$PIP_EXTRA_INDEX_URL")
+  fi
+  if ! "$VENV_DIR/bin/pip" install "${pip_args[@]}" "$APP_ROOT/backend"; then
+    die "pip install failed. Check network access to your package index, or rerun with PIP_INDEX_URL / PIP_DEFAULT_TIMEOUT / PIP_RETRIES overrides"
+  fi
 }
 
 build_frontend() {
@@ -359,6 +428,8 @@ main() {
   require_cmd sudo "$SUDO_BIN"
   require_cmd python3 "$PYTHON_BIN"
   require_cmd npm "$NPM_BIN"
+  check_python_venv_support
+  normalize_nanobot_unit_template
   guard_install_path
   load_existing_env
   SESSION_SECRET="${SESSION_SECRET:-$(generate_secret)}"

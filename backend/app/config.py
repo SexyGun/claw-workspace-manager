@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+import re
 import shlex
 
 from pydantic import Field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+WORKSPACE_ID_PLACEHOLDER = "{workspace_id}"
+LEGACY_WORKSPACE_ID_PLACEHOLDER = "{workspace_id.service}"
 
 
 class Settings(BaseSettings):
@@ -32,6 +38,17 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     bootstrap_admin_username: str | None = None
     bootstrap_admin_password: str | None = None
+
+    @field_validator("nanobot_unit_template")
+    @classmethod
+    def validate_nanobot_unit_template(cls, value: str) -> str:
+        normalized = value.strip().replace(LEGACY_WORKSPACE_ID_PLACEHOLDER, f"{WORKSPACE_ID_PLACEHOLDER}.service")
+        if WORKSPACE_ID_PLACEHOLDER not in normalized:
+            raise ValueError("nanobot_unit_template must contain '{workspace_id}'")
+        remainder = normalized.replace(WORKSPACE_ID_PLACEHOLDER, "", 1)
+        if re.search(r"[{}]", remainder):
+            raise ValueError("nanobot_unit_template contains unsupported format placeholders")
+        return normalized
 
     @property
     def database_url(self) -> str:

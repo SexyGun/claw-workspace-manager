@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=claw
-Group=claw
+User=claw-manager
+Group=claw-manager
 Environment=NANOBOT_GATEWAY_BIN=/usr/local/bin/nanobot-gateway
 Environment=CLAW_RUNTIME_ROOT=/srv/claw/runtime
 ExecStart=/bin/sh -lc '"$NANOBOT_GATEWAY_BIN" --config "$CLAW_RUNTIME_ROOT/nanobot/%i/gateway.yaml"'

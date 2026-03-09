@@ -69,6 +69,7 @@ Claw 工作区管理器用于把“用户 / workspace / 运行时实例”这三
 
 - [`backend`](/Users/lichen/zh_workplace/claw-workspace-manager/backend) FastAPI 应用、数据库模型、Alembic 和测试
 - [`frontend`](/Users/lichen/zh_workplace/claw-workspace-manager/frontend) Vue 管理控制台
+- [`deploy/install-native.sh`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy/install-native.sh) 服务器一键部署并启动脚本
 - [`deploy/systemd`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy/systemd) 原生运行时 `systemd` 模板
 - [`deploy/sudoers`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy/sudoers) 受限 `sudo` 示例
 - [`deploy/templates`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy/templates) 新建 workspace 使用的模板目录
@@ -105,7 +106,24 @@ Vite 开发服务器会将 `/api` 代理到 `http://localhost:8000`。
 
 ## 原生部署
 
-建议配合 [`deploy/systemd/README.md`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy/systemd/README.md) 中的说明部署。
+推荐直接使用一键部署脚本：
+
+```bash
+sudo bash deploy/install-native.sh
+```
+
+服务器需要预先安装：`python3`、`venv`、`npm`、`systemd`、`sudo`，以及可执行的 OpenClaw / Nanobot 二进制。
+
+脚本会完成代码同步、前后端安装、环境文件生成、`systemd` 单元安装和管理器启动。完整说明见 [`deploy/systemd/README.md`](/Users/lichen/zh_workplace/claw-workspace-manager/deploy/systemd/README.md)。
+
+如果 OpenClaw / Nanobot 二进制不在默认位置，可以在执行时覆盖变量：
+
+```bash
+sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
+  NANOBOT_GATEWAY_BIN=/opt/nanobot/bin/nanobot-gateway \
+  MANAGER_PORT=8080 \
+  bash deploy/install-native.sh
+```
 
 关键环境变量：
 

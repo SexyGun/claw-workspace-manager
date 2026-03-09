@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=claw
-Group=claw
+User=claw-manager
+Group=claw-manager
 Environment=OPENCLAW_BIN=/usr/local/bin/openclaw
 Environment=CLAW_RUNTIME_ROOT=/srv/claw/runtime
 ExecStart=/bin/sh -lc '"$OPENCLAW_BIN" gateway --config "$CLAW_RUNTIME_ROOT/openclaw/openclaw.json"'

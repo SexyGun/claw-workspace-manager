@@ -30,7 +30,7 @@ def get_workspace_profiles(settings: Settings) -> dict[str, WorkspaceProfile]:
         WORKSPACE_TYPE_OPENCLAW: WorkspaceProfile(
             key=WORKSPACE_TYPE_OPENCLAW,
             label="OpenClaw 工作区",
-            description="带独立运行容器的 OpenClaw 工作区",
+            description="接入共享 OpenClaw 服务的工作区",
             template_version="openclaw-workspace-v1",
             template_root=settings.openclaw_workspace_template_root,
             runtime_kind="openclaw",

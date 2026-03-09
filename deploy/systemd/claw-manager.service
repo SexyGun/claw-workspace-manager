@@ -1,0 +1,17 @@
+[Unit]
+Description=Claw Workspace Manager
+After=network.target
+
+[Service]
+Type=simple
+User=claw-manager
+Group=claw-manager
+EnvironmentFile=/etc/claw-workspace-manager.env
+WorkingDirectory=/opt/claw-workspace-manager/app/backend
+ExecStartPre=/opt/claw-workspace-manager/venv/bin/alembic upgrade head
+ExecStart=/opt/claw-workspace-manager/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

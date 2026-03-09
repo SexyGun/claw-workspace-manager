@@ -277,6 +277,7 @@ def create_workspace_api(
     settings: Settings = Depends(get_app_settings),
     openclaw_manager: OpenClawRuntimeManager = Depends(get_openclaw_manager),
 ) -> WorkspaceRead:
+    workspace: models.Workspace | None = None
     try:
         workspace = workspace_service.create_workspace(db, settings, current_user, payload.name, payload.workspace_type)
         render_workspace_artifacts(db, workspace, settings)
@@ -284,6 +285,15 @@ def create_workspace_api(
             openclaw_manager.reload_if_running(db)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        if workspace is not None:
+            workspace_service.delete_workspace(db, settings, workspace)
+            if workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW:
+                render_openclaw_service_artifacts(db, settings)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Workspace created but post-processing failed; partial data has been cleaned up.",
+        ) from exc
     return WorkspaceRead.model_validate(workspace)
 
 

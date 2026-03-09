@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+import pytest
 
 import app.config
+from app.api import workspaces as workspaces_api
 
 from .conftest import login
 
@@ -80,3 +82,28 @@ def test_workspace_creation_invalid_runtime_template_cleans_up_directory(client:
         assert not (local_root / "1" / "broken-runtime").exists()
     finally:
         settings.nanobot_unit_template = original_template
+
+
+def test_workspace_creation_render_failure_cleans_up_database_and_directory(client: TestClient, app_env, monkeypatch: pytest.MonkeyPatch):
+    original_render = workspaces_api.render_workspace_artifacts
+
+    def fail_render(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(workspaces_api, "render_workspace_artifacts", fail_render)
+
+    login(client, "admin", "admin-password")
+    response = client.post("/api/workspaces", json={"name": "Transient Failure"})
+    assert response.status_code == 500
+    assert "cleaned up" in response.json()["detail"]
+
+    list_response = client.get("/api/workspaces")
+    assert list_response.status_code == 200
+    assert all(item["slug"] != "transient-failure" for item in list_response.json())
+
+    local_root = Path(app_env["workspaces_local"])
+    assert not (local_root / "1" / "transient-failure").exists()
+
+    monkeypatch.setattr(workspaces_api, "render_workspace_artifacts", original_render)
+    retry_response = client.post("/api/workspaces", json={"name": "Transient Failure"})
+    assert retry_response.status_code == 201, retry_response.text

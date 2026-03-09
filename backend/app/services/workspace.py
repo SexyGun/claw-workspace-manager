@@ -169,3 +169,16 @@ def create_workspace(
         if local_path.exists():
             shutil.rmtree(local_path, ignore_errors=True)
         raise
+
+
+def delete_workspace(db: Session, settings: Settings, workspace: models.Workspace) -> None:
+    local_path = local_path_from_host_path(settings, workspace.host_path)
+    nanobot_runtime_path = settings.runtime_state_root / "nanobot" / str(workspace.id)
+
+    db.delete(workspace)
+    db.commit()
+
+    if local_path.exists():
+        shutil.rmtree(local_path, ignore_errors=True)
+    if nanobot_runtime_path.exists():
+        shutil.rmtree(nanobot_runtime_path, ignore_errors=True)

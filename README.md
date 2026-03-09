@@ -72,6 +72,24 @@ Vite 开发服务器会将 `/api` 代理到 `http://localhost:8000`。
 
 4. 打开 `http://<host>:<MANAGER_PORT>`。
 
+## 工作区目录约定
+
+- 默认工作区根目录是 `backend/.data/workspaces`。
+- 每个工作区的宿主机路径格式为 `<workspace_root>/<owner_user_id>/<slug>`。
+- 其中 `owner_user_id` 是工作区所属用户的数据库主键，不是工作区 ID。
+- `slug` 由工作区名称规范化生成，只保留小写字母和数字；如果名称规范化后为空，则回退为 `workspace`。
+
+例如：
+
+- `backend/.data/workspaces/1/lee` 表示用户 `id=1` 名下、slug 为 `lee` 的工作区。
+- `backend/.data/workspaces/1/workspace` 通常表示该工作区名称在 slug 化后变成空字符串，因此使用了默认 slug `workspace`。
+
+这样定义有几个目的：
+
+- 先按用户分层，避免不同用户之间出现同名工作区目录冲突。
+- 使用用户 ID 而不是用户名，保证目录路径在用户名变更后仍然稳定。
+- Docker 启动 Gateway 或 OpenClaw 容器时，可以直接按宿主机路径挂载整个工作区目录。
+
 ## 说明
 
 - 管理容器需要访问 `/var/run/docker.sock`，因此只应部署在可信的单租户主机上。

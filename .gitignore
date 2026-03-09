@@ -1,0 +1,9 @@
+.DS_Store
+.venv/
+node_modules/
+frontend/dist/
+backend/app/static/
+.pytest_cache/
+.data/
+backend/.coverage
+backend/app.db

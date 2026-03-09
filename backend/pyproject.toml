@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claw-workspace-manager-backend"
+version = "0.1.0"
+description = "Dockerized workspace manager backend"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "alembic>=1.14,<2.0",
+  "docker>=7.1,<8.0",
+  "eval_type_backport>=0.2,<1.0",
+  "fastapi>=0.115,<1.0",
+  "itsdangerous>=2.2,<3.0",
+  "jinja2>=3.1,<4.0",
+  "passlib[bcrypt]>=1.7,<2.0",
+  "pydantic-settings>=2.7,<3.0",
+  "PyYAML>=6.0,<7.0",
+  "sqlalchemy>=2.0,<3.0",
+  "uvicorn[standard]>=0.32,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28,<1.0",
+  "pytest>=8.3,<9.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+  "ignore::DeprecationWarning:starlette.*",
+]

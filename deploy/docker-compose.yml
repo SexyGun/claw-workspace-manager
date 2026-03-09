@@ -1,0 +1,27 @@
+services:
+  manager:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: claw-workspace-manager:latest
+    ports:
+      - "${MANAGER_PORT:-8000}:8000"
+    environment:
+      APP_ENV: production
+      SESSION_SECRET: "${SESSION_SECRET}"
+      SQLITE_PATH: /data/sqlite/app.db
+      WORKSPACE_ROOT: /data/workspaces
+      HOST_WORKSPACE_ROOT: "${HOST_WORKSPACE_ROOT}"
+      WORKSPACE_TEMPLATE_ROOT: /data/templates/base-workspace
+      GATEWAY_IMAGE: "${GATEWAY_IMAGE}"
+      GATEWAY_WORKSPACE_MOUNT: /workspace
+      GATEWAY_CONFIG_PATH: /workspace/.nanobot/gateway.yaml
+      NANOBOT_CONFIG_PATH: /workspace/.nanobot/config.json
+      BOOTSTRAP_ADMIN_USERNAME: "${BOOTSTRAP_ADMIN_USERNAME}"
+      BOOTSTRAP_ADMIN_PASSWORD: "${BOOTSTRAP_ADMIN_PASSWORD}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - "${HOST_SQLITE_ROOT}:/data/sqlite"
+      - "${HOST_WORKSPACE_ROOT}:/data/workspaces"
+      - "${HOST_TEMPLATE_ROOT}:/data/templates"
+    restart: unless-stopped

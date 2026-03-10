@@ -401,10 +401,20 @@ ensure_single_user_runtime() {
   local resolved_home=""
 
   if [ -n "$RUNTIME_USER" ] && [ "$RUNTIME_USER" != "$APP_USER" ]; then
-    die "RUNTIME_USER must match APP_USER; separate runtime users are no longer supported"
+    if [ -z "$RUNTIME_USER_WAS_SET" ]; then
+      warn "ignoring legacy RUNTIME_USER=$RUNTIME_USER from existing env; runtime now follows APP_USER=$APP_USER"
+      RUNTIME_USER=""
+    else
+      die "RUNTIME_USER must match APP_USER; separate runtime users are no longer supported"
+    fi
   fi
   if [ -n "$RUNTIME_GROUP" ] && [ "$RUNTIME_GROUP" != "$APP_GROUP" ]; then
-    die "RUNTIME_GROUP must match APP_GROUP; separate runtime groups are no longer supported"
+    if [ -z "$RUNTIME_GROUP_WAS_SET" ]; then
+      warn "ignoring legacy RUNTIME_GROUP=$RUNTIME_GROUP from existing env; runtime now follows APP_GROUP=$APP_GROUP"
+      RUNTIME_GROUP=""
+    else
+      die "RUNTIME_GROUP must match APP_GROUP; separate runtime groups are no longer supported"
+    fi
   fi
 
   resolved_home="$(resolve_app_home)"
@@ -415,7 +425,12 @@ ensure_single_user_runtime() {
     die "APP_USER home directory does not exist: $resolved_home"
   fi
   if [ -n "$RUNTIME_HOME" ] && [ "$RUNTIME_HOME" != "$resolved_home" ]; then
-    die "RUNTIME_HOME must match APP_USER home $resolved_home; separate runtime homes are no longer supported"
+    if [ -z "$RUNTIME_HOME_WAS_SET" ]; then
+      warn "ignoring legacy RUNTIME_HOME=$RUNTIME_HOME from existing env; runtime home now follows APP_USER home $resolved_home"
+      RUNTIME_HOME=""
+    else
+      die "RUNTIME_HOME must match APP_USER home $resolved_home; separate runtime homes are no longer supported"
+    fi
   fi
 
   APP_HOME="$resolved_home"

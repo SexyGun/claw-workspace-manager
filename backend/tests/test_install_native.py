@@ -158,6 +158,49 @@ write_env_file
     assert f"HOST_WORKSPACE_ROOT={new_root}" in env_text
 
 
+def test_install_native_ignores_legacy_runtime_identity_from_existing_env(tmp_path: Path) -> None:
+    env = base_env(tmp_path)
+    fake_home = Path(env["APP_HOME_OVERRIDE"])
+    env_file = Path(env["ENV_FILE"])
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text(
+        "\n".join(
+            [
+                f"APP_USER={env['APP_USER']}",
+                f"APP_GROUP={env['APP_GROUP']}",
+                "RUNTIME_USER=legacy-runtime",
+                "RUNTIME_GROUP=legacy-group",
+                "RUNTIME_HOME=/home/legacy-runtime",
+                "SESSION_SECRET=test-secret",
+                "BOOTSTRAP_ADMIN_PASSWORD=test-password",
+                "OPENCLAW_BIN=/bin/true",
+                "NANOBOT_BIN=/bin/true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_install_shell(
+        """
+load_existing_env
+ensure_single_user_runtime
+initialize_paths
+write_env_file
+""",
+        env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    env_text = env_file.read_text(encoding="utf-8")
+    assert f"RUNTIME_USER={env['APP_USER']}" in env_text
+    assert f"RUNTIME_GROUP={env['APP_GROUP']}" in env_text
+    assert f"RUNTIME_HOME={fake_home}" in env_text
+    assert "ignoring legacy RUNTIME_USER=legacy-runtime" in result.stderr
+    assert "ignoring legacy RUNTIME_GROUP=legacy-group" in result.stderr
+    assert "ignoring legacy RUNTIME_HOME=/home/legacy-runtime" in result.stderr
+
+
 def test_install_native_rejects_conflicting_legacy_and_new_workspace_roots(tmp_path: Path) -> None:
     env = base_env(tmp_path)
     fake_home = Path(env["APP_HOME_OVERRIDE"])

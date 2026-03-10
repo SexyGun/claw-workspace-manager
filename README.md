@@ -128,42 +128,39 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
   bash deploy/install-native.sh
 ```
 
-如果 OpenClaw / Nanobot 安装在当前登录用户的 `~/.local/bin`，推荐把运行时 unit 切到这个用户，而不是继续让 `claw-manager` 直接执行用户私有安装：
+如果 OpenClaw / Nanobot 安装在某个登录用户的 `~/.local/bin`，直接把整个部署切到这个用户即可。脚本现在固定使用单用户模型，manager 和 runtime 都会使用同一个 `APP_USER`：
 
 ```bash
 sudo env \
-  RUNTIME_USER=leechen \
-  RUNTIME_HOME=/home/leechen \
+  APP_USER=leechen \
+  APP_GROUP=leechen \
   OPENCLAW_BIN=/home/leechen/.local/bin/openclaw \
   NANOBOT_BIN=/home/leechen/.local/bin/nanobot \
   bash deploy/install-native.sh
 ```
 
-如果你已经设置了 `RUNTIME_USER` / `RUNTIME_HOME`，但没有显式传入 `OPENCLAW_BIN` 或 `NANOBOT_BIN`，脚本会优先尝试从该 runtime 用户的以下位置自动探测二进制：
+如果你没有显式传入 `OPENCLAW_BIN` 或 `NANOBOT_BIN`，脚本会优先尝试从 `APP_USER` 的以下位置自动探测二进制：
 
 - `~/.npm-global/bin`
 - `~/.local/bin`
 - 该用户登录 shell 的 `PATH`
 
-如果你直接运行 `sudo bash deploy/install-native.sh` 且当前终端可交互，脚本在遇到 runtime 用户、home 或二进制权限/路径问题时，会直接提示你输入修正值，而不是要求你退出后重新拼一串长 `env`。
+如果你直接运行 `sudo bash deploy/install-native.sh` 且当前终端可交互，脚本在遇到二进制权限或路径问题时，会直接提示你输入修正值，而不是要求你退出后重新拼一串长 `env`。
 
-这些运行时变量会被持久化到 `/etc/claw-workspace-manager.env`。首次成功执行后，后续直接运行：
+首次成功执行后，后续直接运行：
 
 ```bash
 sudo bash deploy/install-native.sh
 ```
 
-脚本会自动沿用上一次保存的 `RUNTIME_USER`、`RUNTIME_HOME`、`OPENCLAW_BIN`、`NANOBOT_BIN` 配置。
+脚本会自动沿用上一次保存的 `APP_USER`、workspace 根目录和二进制路径配置。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，且新的 `~/claw` 目标目录不存在，会自动迁移到服务用户 home 下的新位置。
 
-如果只是修正 OpenClaw / Nanobot 二进制路径，通常更新 `/etc/claw-workspace-manager.env` 后直接重启对应 runtime service 即可；只有修改 `RUNTIME_USER`、`RUNTIME_GROUP` 或 unit 模板时才需要重新运行安装脚本并 `daemon-reload`。
+如果只是修正 OpenClaw / Nanobot 二进制路径，通常更新 `/etc/claw-workspace-manager.env` 后直接重启对应 runtime service 即可；只有修改 `APP_USER`、`APP_GROUP` 或 unit 模板时才需要重新运行安装脚本并 `daemon-reload`。
 
 关键环境变量：
 
 - `APP_USER`：管理器服务用户，默认 `claw-manager`
 - `APP_GROUP`：管理器服务组，默认同 `APP_USER`
-- `RUNTIME_USER`：OpenClaw / Nanobot runtime user，默认同 `APP_USER`
-- `RUNTIME_GROUP`：runtime 运行组，默认同 `APP_GROUP`
-- `RUNTIME_HOME`：runtime 用户的 `HOME`，默认按 `RUNTIME_USER` 自动探测
 - `SQLITE_PATH`：SQLite 数据库路径
 - `WORKSPACE_ROOT`：管理器读取 workspace 的本地路径
 - `HOST_WORKSPACE_ROOT`：workspace 宿主机根目录
@@ -230,6 +227,8 @@ sudo systemctl restart claw-manager.service
 - 每个工作区目录格式是 `<workspace_root>/<owner_user_id>/<slug>`
 - `owner_user_id` 是所属用户 ID，不是工作区 ID
 - `slug` 由工作区名称规范化生成；如果结果为空，则回退为 `workspace`
+
+原生部署下，`<workspace_root>` 的默认值现在是服务用户 home 下的 `~/claw`。如果使用默认的 `claw-manager` 系统用户，实际路径会是 `/opt/claw-workspace-manager/home/claw`；如果把 `APP_USER` 设成现有登录用户，例如 `leechen`，则会变成 `/home/leechen/claw`。
 
 例如：
 

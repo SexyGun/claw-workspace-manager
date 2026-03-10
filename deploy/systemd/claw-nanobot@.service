@@ -7,6 +7,7 @@ Type=simple
 User=claw-manager
 Group=claw-manager
 EnvironmentFile=/etc/claw-workspace-manager.env
+Environment=HOME=/opt/claw-workspace-manager/home
 EnvironmentFile=/srv/claw/runtime/nanobot/%i/runtime.env
 ExecStart=/bin/sh -lc '"$NANOBOT_BIN" gateway --config "$NANOBOT_CONFIG_PATH" --port "$NANOBOT_PORT"'
 KillMode=control-group

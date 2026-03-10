@@ -15,6 +15,10 @@ APP_GROUP_WAS_SET="${APP_GROUP+x}"
 RUNTIME_USER_WAS_SET="${RUNTIME_USER+x}"
 RUNTIME_GROUP_WAS_SET="${RUNTIME_GROUP+x}"
 RUNTIME_HOME_WAS_SET="${RUNTIME_HOME+x}"
+SQLITE_PATH_WAS_SET="${SQLITE_PATH+x}"
+WORKSPACE_ROOT_WAS_SET="${WORKSPACE_ROOT+x}"
+HOST_WORKSPACE_ROOT_WAS_SET="${HOST_WORKSPACE_ROOT+x}"
+RUNTIME_STATE_ROOT_WAS_SET="${RUNTIME_STATE_ROOT+x}"
 OPENCLAW_BIN_WAS_SET="${OPENCLAW_BIN+x}"
 NANOBOT_BIN_WAS_SET="${NANOBOT_BIN+x}"
 SESSION_SECRET_WAS_SET="${SESSION_SECRET+x}"
@@ -22,19 +26,26 @@ BOOTSTRAP_ADMIN_PASSWORD_WAS_SET="${BOOTSTRAP_ADMIN_PASSWORD+x}"
 
 APP_USER="${APP_USER:-claw-manager}"
 APP_GROUP="${APP_GROUP:-$APP_USER}"
-RUNTIME_USER="${RUNTIME_USER:-$APP_USER}"
-RUNTIME_GROUP="${RUNTIME_GROUP:-$APP_GROUP}"
+RUNTIME_USER="${RUNTIME_USER:-}"
+RUNTIME_GROUP="${RUNTIME_GROUP:-}"
 RUNTIME_HOME="${RUNTIME_HOME:-}"
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/claw-workspace-manager}"
 APP_ROOT="${APP_ROOT:-$INSTALL_ROOT/app}"
 VENV_DIR="${VENV_DIR:-$INSTALL_ROOT/venv}"
 DATA_ROOT="${DATA_ROOT:-/srv/claw}"
+APP_HOME_OVERRIDE="${APP_HOME_OVERRIDE:-}"
+LEGACY_WORKSPACE_ROOT="${LEGACY_WORKSPACE_ROOT:-/srv/claw/workspaces}"
+SQLITE_PATH="${SQLITE_PATH:-}"
+WORKSPACE_ROOT="${WORKSPACE_ROOT:-}"
+HOST_WORKSPACE_ROOT="${HOST_WORKSPACE_ROOT:-}"
+RUNTIME_STATE_ROOT="${RUNTIME_STATE_ROOT:-}"
+DEFAULT_NANOBOT_UNIT_TEMPLATE='claw-nanobot@{workspace_id}.service'
 ENV_FILE="${ENV_FILE:-/etc/claw-workspace-manager.env}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 SUDOERS_FILE="${SUDOERS_FILE:-/etc/sudoers.d/claw-workspace-manager}"
 MANAGER_SERVICE="${MANAGER_SERVICE:-claw-manager.service}"
 OPENCLAW_SHARED_UNIT="${OPENCLAW_SHARED_UNIT:-claw-openclaw.service}"
-NANOBOT_UNIT_TEMPLATE="${NANOBOT_UNIT_TEMPLATE:-claw-nanobot@{workspace_id}.service}"
+NANOBOT_UNIT_TEMPLATE="${NANOBOT_UNIT_TEMPLATE:-$DEFAULT_NANOBOT_UNIT_TEMPLATE}"
 MANAGER_HOST="${MANAGER_HOST:-0.0.0.0}"
 MANAGER_PORT="${MANAGER_PORT:-8000}"
 RUNTIME_HOST="${RUNTIME_HOST:-127.0.0.1}"
@@ -54,9 +65,11 @@ PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:-}"
 PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
 PIP_RETRIES="${PIP_RETRIES:-5}"
 
-SQLITE_PATH_DEFAULT="$DATA_ROOT/sqlite/app.db"
-WORKSPACE_ROOT_DEFAULT="$DATA_ROOT/workspaces"
-RUNTIME_STATE_ROOT_DEFAULT="$DATA_ROOT/runtime"
+APP_HOME=""
+SQLITE_PATH_DEFAULT=""
+WORKSPACE_ROOT_DEFAULT=""
+HOST_WORKSPACE_ROOT_DEFAULT=""
+RUNTIME_STATE_ROOT_DEFAULT=""
 WORKSPACE_TEMPLATE_ROOT_DEFAULT="$APP_ROOT/deploy/templates/base-workspace"
 OPENCLAW_WORKSPACE_TEMPLATE_ROOT_DEFAULT="$APP_ROOT/deploy/templates/openclaw-workspace"
 
@@ -94,27 +107,6 @@ prompt_with_default() {
     return
   fi
   printf '%s\n' "$response"
-}
-
-prompt_yes_no() {
-  local prompt="$1"
-  local default_answer="${2:-y}"
-  local response=""
-  local suffix="[Y/n]"
-
-  if [ "$default_answer" = "n" ]; then
-    suffix="[y/N]"
-  fi
-
-  while true; do
-    printf '%s %s: ' "$prompt" "$suffix" >&2
-    read -r response
-    response="${response:-$default_answer}"
-    case "$response" in
-      [Yy]|[Yy][Ee][Ss]) return 0 ;;
-      [Nn]|[Nn][Oo]) return 1 ;;
-    esac
-  done
 }
 
 require_root() {
@@ -174,16 +166,24 @@ detect_nologin() {
 }
 
 normalize_nanobot_unit_template() {
-  if [[ "$NANOBOT_UNIT_TEMPLATE" == *"{workspace_id.service}"* ]]; then
+  local legacy_placeholder="{workspace_id.service}"
+  local placeholder="{workspace_id}"
+  local prefix=""
+  local remainder=""
+  local suffix=""
+
+  if [[ "$NANOBOT_UNIT_TEMPLATE" == *"$legacy_placeholder"* ]]; then
     warn "normalizing legacy NANOBOT_UNIT_TEMPLATE placeholder {workspace_id.service} to {workspace_id}.service"
-    NANOBOT_UNIT_TEMPLATE="${NANOBOT_UNIT_TEMPLATE//\{workspace_id.service\}/\{workspace_id\}.service}"
+    NANOBOT_UNIT_TEMPLATE="${NANOBOT_UNIT_TEMPLATE//$legacy_placeholder/$placeholder.service}"
   fi
 
-  if [[ "$NANOBOT_UNIT_TEMPLATE" != *"{workspace_id}"* ]]; then
+  if [[ "$NANOBOT_UNIT_TEMPLATE" != *"$placeholder"* ]]; then
     die "NANOBOT_UNIT_TEMPLATE must contain the literal placeholder {workspace_id}"
   fi
 
-  local remainder="${NANOBOT_UNIT_TEMPLATE/\{workspace_id\}/}"
+  prefix="${NANOBOT_UNIT_TEMPLATE%%"$placeholder"*}"
+  suffix="${NANOBOT_UNIT_TEMPLATE#*"$placeholder"}"
+  remainder="${prefix}${suffix}"
   if [[ "$remainder" == *"{"* ]] || [[ "$remainder" == *"}"* ]]; then
     die "NANOBOT_UNIT_TEMPLATE contains unsupported braces; use a value like claw-nanobot@{workspace_id}.service"
   fi
@@ -220,6 +220,18 @@ load_existing_env() {
   if [ -z "$RUNTIME_HOME_WAS_SET" ]; then
     RUNTIME_HOME="$(read_env_value RUNTIME_HOME)"
   fi
+  if [ -z "$SQLITE_PATH_WAS_SET" ]; then
+    SQLITE_PATH="$(read_env_value SQLITE_PATH)"
+  fi
+  if [ -z "$WORKSPACE_ROOT_WAS_SET" ]; then
+    WORKSPACE_ROOT="$(read_env_value WORKSPACE_ROOT)"
+  fi
+  if [ -z "$HOST_WORKSPACE_ROOT_WAS_SET" ]; then
+    HOST_WORKSPACE_ROOT="$(read_env_value HOST_WORKSPACE_ROOT)"
+  fi
+  if [ -z "$RUNTIME_STATE_ROOT_WAS_SET" ]; then
+    RUNTIME_STATE_ROOT="$(read_env_value RUNTIME_STATE_ROOT)"
+  fi
   if [ -z "$OPENCLAW_BIN_WAS_SET" ]; then
     OPENCLAW_BIN="$(read_env_value OPENCLAW_BIN)"
   fi
@@ -235,13 +247,8 @@ load_existing_env() {
 
   APP_USER="${APP_USER:-claw-manager}"
   APP_GROUP="${APP_GROUP:-$APP_USER}"
-  RUNTIME_USER="${RUNTIME_USER:-$APP_USER}"
-  RUNTIME_GROUP="${RUNTIME_GROUP:-$APP_GROUP}"
   OPENCLAW_BIN="${OPENCLAW_BIN:-/usr/local/bin/openclaw}"
   NANOBOT_BIN="${NANOBOT_BIN:-/usr/local/bin/nanobot}"
-  if [ -z "$RUNTIME_HOME" ] && [ "$RUNTIME_USER" = "$APP_USER" ]; then
-    RUNTIME_HOME="$(resolve_user_home "$APP_USER")"
-  fi
 }
 
 ensure_group() {
@@ -269,6 +276,14 @@ ensure_user() {
 resolve_user_home() {
   local username="$1"
   getent passwd "$username" | awk -F: '{print $6}'
+}
+
+resolve_app_home() {
+  if [ -n "$APP_HOME_OVERRIDE" ]; then
+    printf '%s\n' "$APP_HOME_OVERRIDE"
+    return
+  fi
+  resolve_user_home "$APP_USER"
 }
 
 detect_binary_for_user() {
@@ -348,36 +363,12 @@ binary_issue_for_user() {
   printf '%s\n' ""
 }
 
-prompt_runtime_user_and_home() {
-  local suggested_user="$RUNTIME_USER"
-  local suggested_home="$RUNTIME_HOME"
-
-  while true; do
-    suggested_user="$(prompt_with_default "Enter runtime user" "${suggested_user:-$APP_USER}")"
-    if ! id "$suggested_user" >/dev/null 2>&1; then
-      warn "runtime user $suggested_user does not exist"
-      continue
-    fi
-    RUNTIME_USER="$suggested_user"
-    RUNTIME_GROUP="$(id -gn "$RUNTIME_USER")"
-    suggested_home="${RUNTIME_HOME:-$(resolve_user_home "$RUNTIME_USER")}"
-    while true; do
-      suggested_home="$(prompt_with_default "Enter runtime home for user $RUNTIME_USER" "$suggested_home")"
-      if [ -n "$suggested_home" ] && [ -d "$suggested_home" ]; then
-        RUNTIME_HOME="$suggested_home"
-        OPENCLAW_BIN="$(resolve_binary_path "OpenClaw" "openclaw" "$OPENCLAW_BIN" "$RUNTIME_USER" "$RUNTIME_HOME")"
-        NANOBOT_BIN="$(resolve_binary_path "Nanobot" "nanobot" "$NANOBOT_BIN" "$RUNTIME_USER" "$RUNTIME_HOME")"
-        return
-      fi
-      warn "runtime home is invalid: $suggested_home"
-    done
-  done
-}
-
 ensure_binary_access() {
   local label="$1"
   local binary_name="$2"
   local var_name="$3"
+  local service_user="$4"
+  local service_home="$5"
   local current_path="${!var_name}"
   local issue=""
   local detected_path=""
@@ -385,7 +376,7 @@ ensure_binary_access() {
 
   while true; do
     current_path="${!var_name}"
-    issue="$(binary_issue_for_user "$current_path" "$RUNTIME_USER")"
+    issue="$(binary_issue_for_user "$current_path" "$service_user")"
     if [ -z "$issue" ]; then
       return
     fi
@@ -394,59 +385,50 @@ ensure_binary_access() {
     fi
 
     warn "$label $issue"
-    if [[ "$issue" == *"runtime user"* ]]; then
-      if prompt_yes_no "Switch runtime user to one that can access $label?" "y"; then
-        prompt_runtime_user_and_home
-        continue
-      fi
-    fi
-
-    detected_path="$(detect_binary_for_user "$binary_name" "$RUNTIME_USER" "$RUNTIME_HOME")"
+    detected_path="$(detect_binary_for_user "$binary_name" "$service_user" "$service_home")"
     next_path="$current_path"
     if [ -n "$detected_path" ] && [ "$detected_path" != "$current_path" ]; then
       next_path="$detected_path"
     fi
-    next_path="$(prompt_with_default "Enter $label binary path for runtime user $RUNTIME_USER" "$next_path")"
+    next_path="$(prompt_with_default "Enter $label binary path for service user $service_user" "$next_path")"
     if [ -n "$next_path" ]; then
       printf -v "$var_name" '%s' "$next_path"
     fi
   done
 }
 
-ensure_runtime_user() {
-  if [ "$RUNTIME_USER" = "$APP_USER" ]; then
-    if [ -z "$RUNTIME_HOME" ]; then
-      RUNTIME_HOME="$(resolve_user_home "$APP_USER")"
-    fi
-  else
-    if ! id "$RUNTIME_USER" >/dev/null 2>&1 || { [ -n "$RUNTIME_HOME" ] && [ ! -d "$RUNTIME_HOME" ]; }; then
-      if is_interactive_terminal; then
-        warn "runtime user/home configuration needs confirmation"
-        prompt_runtime_user_and_home
-      else
-        if ! id "$RUNTIME_USER" >/dev/null 2>&1; then
-          die "RUNTIME_USER $RUNTIME_USER does not exist; create it first or rerun with RUNTIME_USER=$APP_USER"
-        fi
-        die "RUNTIME_HOME for user $RUNTIME_USER is invalid: $RUNTIME_HOME"
-      fi
-    fi
-    if [ -z "$RUNTIME_HOME" ]; then
-      RUNTIME_HOME="$(resolve_user_home "$RUNTIME_USER")"
-    fi
-    if [ -z "$RUNTIME_HOME" ] || [ ! -d "$RUNTIME_HOME" ]; then
-      if is_interactive_terminal; then
-        warn "runtime home is invalid: $RUNTIME_HOME"
-        prompt_runtime_user_and_home
-      else
-        die "RUNTIME_HOME for user $RUNTIME_USER is invalid: $RUNTIME_HOME"
-      fi
-    fi
+ensure_single_user_runtime() {
+  local resolved_home=""
+
+  if [ -n "$RUNTIME_USER" ] && [ "$RUNTIME_USER" != "$APP_USER" ]; then
+    die "RUNTIME_USER must match APP_USER; separate runtime users are no longer supported"
+  fi
+  if [ -n "$RUNTIME_GROUP" ] && [ "$RUNTIME_GROUP" != "$APP_GROUP" ]; then
+    die "RUNTIME_GROUP must match APP_GROUP; separate runtime groups are no longer supported"
   fi
 
-  OPENCLAW_BIN="$(resolve_binary_path "OpenClaw" "openclaw" "$OPENCLAW_BIN" "$RUNTIME_USER" "$RUNTIME_HOME")"
-  NANOBOT_BIN="$(resolve_binary_path "Nanobot" "nanobot" "$NANOBOT_BIN" "$RUNTIME_USER" "$RUNTIME_HOME")"
-  ensure_binary_access "OpenClaw" "openclaw" OPENCLAW_BIN
-  ensure_binary_access "Nanobot" "nanobot" NANOBOT_BIN
+  resolved_home="$(resolve_app_home)"
+  if [ -z "$resolved_home" ]; then
+    die "unable to determine home directory for APP_USER $APP_USER"
+  fi
+  if [ ! -d "$resolved_home" ]; then
+    die "APP_USER home directory does not exist: $resolved_home"
+  fi
+  if [ -n "$RUNTIME_HOME" ] && [ "$RUNTIME_HOME" != "$resolved_home" ]; then
+    die "RUNTIME_HOME must match APP_USER home $resolved_home; separate runtime homes are no longer supported"
+  fi
+
+  APP_HOME="$resolved_home"
+  RUNTIME_USER="$APP_USER"
+  RUNTIME_GROUP="$APP_GROUP"
+  RUNTIME_HOME="$APP_HOME"
+}
+
+ensure_runtime_binaries() {
+  OPENCLAW_BIN="$(resolve_binary_path "OpenClaw" "openclaw" "$OPENCLAW_BIN" "$APP_USER" "$APP_HOME")"
+  NANOBOT_BIN="$(resolve_binary_path "Nanobot" "nanobot" "$NANOBOT_BIN" "$APP_USER" "$APP_HOME")"
+  ensure_binary_access "OpenClaw" "openclaw" OPENCLAW_BIN "$APP_USER" "$APP_HOME"
+  ensure_binary_access "Nanobot" "nanobot" NANOBOT_BIN "$APP_USER" "$APP_HOME"
 }
 
 warn_if_binary_unusable_by_service_user() {
@@ -466,14 +448,64 @@ warn_if_binary_unusable_by_service_user() {
   fi
 }
 
+initialize_paths() {
+  SQLITE_PATH_DEFAULT="$DATA_ROOT/sqlite/app.db"
+  RUNTIME_STATE_ROOT_DEFAULT="$DATA_ROOT/runtime"
+  WORKSPACE_ROOT_DEFAULT="$APP_HOME/claw"
+  HOST_WORKSPACE_ROOT_DEFAULT="$WORKSPACE_ROOT_DEFAULT"
+
+  SQLITE_PATH="${SQLITE_PATH:-$SQLITE_PATH_DEFAULT}"
+  RUNTIME_STATE_ROOT="${RUNTIME_STATE_ROOT:-$RUNTIME_STATE_ROOT_DEFAULT}"
+
+  if [ -z "$WORKSPACE_ROOT" ] || [ "$WORKSPACE_ROOT" = "$LEGACY_WORKSPACE_ROOT" ]; then
+    WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
+  fi
+  if [ -z "$HOST_WORKSPACE_ROOT" ]; then
+    HOST_WORKSPACE_ROOT="$WORKSPACE_ROOT"
+  elif [ "$HOST_WORKSPACE_ROOT" = "$LEGACY_WORKSPACE_ROOT" ]; then
+    HOST_WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
+  fi
+}
+
+path_has_entries() {
+  local path="$1"
+  find "$path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .
+}
+
+migrate_legacy_workspace_root_if_needed() {
+  if [ "$WORKSPACE_ROOT" != "$WORKSPACE_ROOT_DEFAULT" ] || [ "$HOST_WORKSPACE_ROOT" != "$WORKSPACE_ROOT_DEFAULT" ]; then
+    return
+  fi
+  if [ -z "$LEGACY_WORKSPACE_ROOT" ] || [ "$LEGACY_WORKSPACE_ROOT" = "$WORKSPACE_ROOT" ] || [ ! -d "$LEGACY_WORKSPACE_ROOT" ]; then
+    return
+  fi
+  if [ -e "$WORKSPACE_ROOT" ]; then
+    if [ ! -d "$WORKSPACE_ROOT" ]; then
+      die "workspace root target exists and is not a directory: $WORKSPACE_ROOT"
+    fi
+    if path_has_entries "$WORKSPACE_ROOT"; then
+      die "both legacy workspace root $LEGACY_WORKSPACE_ROOT and new workspace root $WORKSPACE_ROOT exist; move data manually"
+    fi
+    rmdir "$WORKSPACE_ROOT"
+  fi
+
+  log "migrating legacy workspace root from $LEGACY_WORKSPACE_ROOT to $WORKSPACE_ROOT"
+  install -d "$(dirname "$WORKSPACE_ROOT")"
+  mv "$LEGACY_WORKSPACE_ROOT" "$WORKSPACE_ROOT"
+}
+
 ensure_directories() {
   install -d "$INSTALL_ROOT"
   install -d "$APP_ROOT"
   install -d "$VENV_DIR"
-  install -d "$DATA_ROOT/sqlite"
-  install -d "$WORKSPACE_ROOT_DEFAULT"
-  install -d "$RUNTIME_STATE_ROOT_DEFAULT/openclaw"
-  install -d "$RUNTIME_STATE_ROOT_DEFAULT/nanobot"
+  install -d "$(dirname "$ENV_FILE")"
+  install -d "$SYSTEMD_DIR"
+  install -d "$(dirname "$SUDOERS_FILE")"
+  install -d "$(dirname "$SQLITE_PATH")"
+  install -d "$WORKSPACE_ROOT"
+  install -d "$HOST_WORKSPACE_ROOT"
+  install -d "$RUNTIME_STATE_ROOT/openclaw"
+  install -d "$RUNTIME_STATE_ROOT/nanobot"
 }
 
 guard_install_path() {
@@ -544,10 +576,10 @@ RUNTIME_HOME=$RUNTIME_HOME
 OPENCLAW_BIN=$OPENCLAW_BIN
 NANOBOT_BIN=$NANOBOT_BIN
 SESSION_SECRET=$SESSION_SECRET
-SQLITE_PATH=$SQLITE_PATH_DEFAULT
-WORKSPACE_ROOT=$WORKSPACE_ROOT_DEFAULT
-HOST_WORKSPACE_ROOT=$WORKSPACE_ROOT_DEFAULT
-RUNTIME_STATE_ROOT=$RUNTIME_STATE_ROOT_DEFAULT
+SQLITE_PATH=$SQLITE_PATH
+WORKSPACE_ROOT=$WORKSPACE_ROOT
+HOST_WORKSPACE_ROOT=$HOST_WORKSPACE_ROOT
+RUNTIME_STATE_ROOT=$RUNTIME_STATE_ROOT
 WORKSPACE_TEMPLATE_ROOT=$WORKSPACE_TEMPLATE_ROOT_DEFAULT
 OPENCLAW_WORKSPACE_TEMPLATE_ROOT=$OPENCLAW_WORKSPACE_TEMPLATE_ROOT_DEFAULT
 SYSTEMCTL_COMMAND=$SYSTEMCTL_BIN
@@ -567,7 +599,7 @@ EOF
 }
 
 write_openclaw_bootstrap_config() {
-  local aggregate_file="$RUNTIME_STATE_ROOT_DEFAULT/openclaw/openclaw.json"
+  local aggregate_file="$RUNTIME_STATE_ROOT/openclaw/openclaw.json"
   if [ -f "$aggregate_file" ]; then
     return
   fi
@@ -628,14 +660,14 @@ User=$RUNTIME_USER
 Group=$RUNTIME_GROUP
 EnvironmentFile=$ENV_FILE
 Environment=HOME=$RUNTIME_HOME
-Environment=CLAW_RUNTIME_ROOT=$RUNTIME_STATE_ROOT_DEFAULT
-Environment=OPENCLAW_CONFIG_PATH=$RUNTIME_STATE_ROOT_DEFAULT/openclaw/openclaw.json
+Environment=CLAW_RUNTIME_ROOT=$RUNTIME_STATE_ROOT
+Environment=OPENCLAW_CONFIG_PATH=$RUNTIME_STATE_ROOT/openclaw/openclaw.json
 ExecStart=/bin/sh -lc '"\$OPENCLAW_BIN" gateway'
 ExecReload=/bin/kill -HUP \$MAINPID
 UMask=0002
 Restart=on-failure
 RestartSec=3
-WorkingDirectory=$RUNTIME_STATE_ROOT_DEFAULT/openclaw
+WorkingDirectory=$RUNTIME_STATE_ROOT/openclaw
 
 [Install]
 WantedBy=multi-user.target
@@ -657,7 +689,7 @@ User=$RUNTIME_USER
 Group=$RUNTIME_GROUP
 EnvironmentFile=$ENV_FILE
 Environment=HOME=$RUNTIME_HOME
-EnvironmentFile=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i/runtime.env
+EnvironmentFile=$RUNTIME_STATE_ROOT/nanobot/%i/runtime.env
 ExecStart=/bin/sh -lc '"\$NANOBOT_BIN" gateway --config "\$NANOBOT_CONFIG_PATH" --port "\$NANOBOT_PORT"'
 KillMode=control-group
 KillSignal=SIGTERM
@@ -665,7 +697,7 @@ TimeoutStopSec=15
 UMask=0002
 Restart=on-failure
 RestartSec=3
-WorkingDirectory=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i
+WorkingDirectory=$RUNTIME_STATE_ROOT/nanobot/%i
 
 [Install]
 WantedBy=multi-user.target
@@ -696,10 +728,15 @@ EOF
 }
 
 set_permissions() {
+  local sqlite_dir
+  sqlite_dir="$(dirname "$SQLITE_PATH")"
   chown -R "$APP_USER:$APP_GROUP" "$INSTALL_ROOT"
-  chown -R "$APP_USER:$APP_GROUP" "$DATA_ROOT"
-  chmod -R g+rwX "$DATA_ROOT"
-  find "$DATA_ROOT" -type d -exec chmod g+s {} +
+  chown -R "$APP_USER:$APP_GROUP" "$WORKSPACE_ROOT"
+  if [ "$HOST_WORKSPACE_ROOT" != "$WORKSPACE_ROOT" ]; then
+    chown -R "$APP_USER:$APP_GROUP" "$HOST_WORKSPACE_ROOT"
+  fi
+  chown -R "$APP_USER:$APP_GROUP" "$RUNTIME_STATE_ROOT"
+  chown -R "$APP_USER:$APP_GROUP" "$sqlite_dir"
 }
 
 start_manager_service() {
@@ -717,6 +754,7 @@ print_summary() {
   printf 'Env file: %s\n' "$ENV_FILE"
   printf 'Install root: %s\n' "$INSTALL_ROOT"
   printf 'Data root: %s\n' "$DATA_ROOT"
+  printf 'Workspace root: %s\n' "$WORKSPACE_ROOT"
   printf 'Admin username: %s\n' "$BOOTSTRAP_ADMIN_USERNAME"
   printf 'Runtime user: %s\n' "$RUNTIME_USER"
   printf 'Runtime home: %s\n' "$RUNTIME_HOME"
@@ -744,7 +782,10 @@ main() {
   fi
   ensure_group
   ensure_user
-  ensure_runtime_user
+  ensure_single_user_runtime
+  initialize_paths
+  migrate_legacy_workspace_root_if_needed
+  ensure_runtime_binaries
   warn_if_binary_unusable_by_service_user "OpenClaw" "$OPENCLAW_BIN" "$RUNTIME_USER"
   warn_if_binary_unusable_by_service_user "Nanobot" "$NANOBOT_BIN" "$RUNTIME_USER"
   ensure_directories
@@ -762,4 +803,6 @@ main() {
   print_summary
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

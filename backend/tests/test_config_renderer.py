@@ -223,6 +223,7 @@ def test_render_openclaw_aggregate_payload_deduplicates_accounts():
 
     payload = config_renderer.render_openclaw_aggregate_payload(workspaces, settings)
 
+    assert payload["gateway"]["mode"] == "local"
     assert payload["gateway"]["port"] == 18500
     assert payload["session"]["dmScope"] == "main"
     assert len(payload["channels"]["feishu"]["accounts"]) == 1

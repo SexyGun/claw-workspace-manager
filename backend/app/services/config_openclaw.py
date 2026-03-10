@@ -573,7 +573,7 @@ def openclaw_raw_json(values: dict[str, Any]) -> str:
 
 def write_openclaw_config(file_path: Path, payload: dict[str, Any]) -> datetime:
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(openclaw_raw_json(payload), encoding="utf-8")
+    file_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return datetime.now(timezone.utc)
 
 
@@ -584,10 +584,17 @@ def mask_openclaw_channel_config(values: dict[str, Any]) -> dict[str, Any]:
     return masked
 
 
+def build_openclaw_gateway_config(port: int) -> dict[str, Any]:
+    return {
+        "mode": "local",
+        "port": port,
+    }
+
+
 def render_openclaw_workspace_payload(openclaw_config: dict[str, Any]) -> dict[str, Any]:
     validated = validate_openclaw_config(openclaw_config)
     return {
-        "gateway": {"port": 7331},
+        "gateway": build_openclaw_gateway_config(7331),
         "models": copy.deepcopy(validated.get("models", {})),
         "session": copy.deepcopy(validated.get("session", {})),
         "hooks": copy.deepcopy(validated.get("hooks", {})),
@@ -670,7 +677,7 @@ def render_openclaw_aggregate_payload(workspaces: list[dict[str, Any]], settings
             )
 
     return {
-        "gateway": {"port": settings.openclaw_gateway_port},
+        "gateway": build_openclaw_gateway_config(settings.openclaw_gateway_port),
         "models": copy.deepcopy(shared_config.get("models", {})),
         "session": copy.deepcopy(shared_config.get("session", {})),
         "hooks": copy.deepcopy(shared_config.get("hooks", {})),

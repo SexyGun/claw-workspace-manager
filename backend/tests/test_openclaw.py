@@ -75,11 +75,15 @@ def test_openclaw_workspace_creation_and_aggregate_rendering(client: TestClient,
     assert aggregate_json.exists()
 
     payload = json.loads(openclaw_json.read_text(encoding="utf-8"))
+    assert payload["gateway"]["mode"] == "local"
+    assert "model" not in payload
+    assert "sandbox" not in payload
     assert payload["agents"]["defaults"]["model"]["primary"] == "claude-3-7-sonnet"
     assert payload["agents"]["defaults"]["sandbox"]["mode"] == "non-main"
     assert payload["session"]["dmScope"] == "main"
 
     aggregate = json.loads(aggregate_json.read_text(encoding="utf-8"))
+    assert aggregate["gateway"]["mode"] == "local"
     assert aggregate["agents"]["list"][0]["workspace"] == str(workspace_dir)
     assert aggregate["channels"]["feishu"]["accounts"][0]["id"] == "feishu-claw-lab"
     assert aggregate["bindings"][0]["agentId"] == f"workspace-{workspace['id']}"
@@ -129,6 +133,9 @@ def test_openclaw_config_supports_explicit_provider_fields_and_masks_secret(clie
 
     rendered_path = Path(app_env["workspaces_local"]) / "1" / "provider-lab" / ".openclaw" / "openclaw.json"
     payload = json.loads(rendered_path.read_text(encoding="utf-8"))
+    assert payload["gateway"]["mode"] == "local"
+    assert "model" not in payload
+    assert "sandbox" not in payload
     provider = payload["models"]["providers"]["moonshot"]
     assert provider["baseUrl"] == "https://api.moonshot.ai/v1"
     assert provider["apiKey"] == "${MOONSHOT_API_KEY}"

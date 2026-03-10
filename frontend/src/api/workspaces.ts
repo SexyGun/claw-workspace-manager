@@ -1,66 +1,13 @@
-import axios from 'axios'
-
 import type {
   OpenClawConfigRead,
   RuntimeStatus,
-  User,
   Workspace,
   WorkspaceConfigRead,
   WorkspaceSummary,
   WorkspaceType,
-} from './types'
+} from '../types'
 
-const api = axios.create({
-  baseURL: '/api',
-  withCredentials: true,
-})
-
-export type ApiError = {
-  detail?: string
-}
-
-export function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<ApiError>(error)) {
-    return error.response?.data?.detail ?? error.message
-  }
-  if (error instanceof Error) {
-    return error.message
-  }
-  return '发生未知错误'
-}
-
-export async function login(username: string, password: string): Promise<User> {
-  const response = await api.post<User>('/auth/login', { username, password })
-  return response.data
-}
-
-export async function logout(): Promise<void> {
-  await api.post('/auth/logout')
-}
-
-export async function fetchMe(): Promise<User> {
-  const response = await api.get<User>('/auth/me')
-  return response.data
-}
-
-export async function listUsers(): Promise<User[]> {
-  const response = await api.get<User[]>('/users')
-  return response.data
-}
-
-export async function createUser(payload: { username: string; password: string; role: 'admin' | 'user'; is_active: boolean }) {
-  const response = await api.post<User>('/users', payload)
-  return response.data
-}
-
-export async function updateUser(userId: number, payload: Partial<Pick<User, 'role' | 'is_active'>>) {
-  const response = await api.patch<User>(`/users/${userId}`, payload)
-  return response.data
-}
-
-export async function resetPassword(userId: number, password: string) {
-  await api.post(`/users/${userId}/reset-password`, { password })
-}
+import { api } from './client'
 
 export async function listWorkspaceTypes(): Promise<WorkspaceType[]> {
   const response = await api.get<WorkspaceType[]>('/workspace-types')

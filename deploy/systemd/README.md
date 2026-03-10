@@ -33,12 +33,21 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
 如果二进制安装在某个已有登录用户的 `~/.local/bin`，运行时 unit 应该直接切到这个用户，并显式传入该用户的 `HOME`：
 
 ```bash
-sudo RUNTIME_USER=leechen \
+sudo env \
+  RUNTIME_USER=leechen \
   RUNTIME_HOME=/home/leechen \
   OPENCLAW_BIN=/home/leechen/.local/bin/openclaw \
   NANOBOT_BIN=/home/leechen/.local/bin/nanobot \
   bash deploy/install-native.sh
 ```
+
+这些变量会写入 `/etc/claw-workspace-manager.env`。首次成功设置后，后续直接重新执行：
+
+```bash
+sudo bash deploy/install-native.sh
+```
+
+脚本会自动复用上一次的 runtime 用户、`HOME` 和二进制路径。
 
 ## 默认目录
 

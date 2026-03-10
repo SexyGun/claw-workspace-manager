@@ -10,6 +10,16 @@ set -euo pipefail
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
+APP_USER_WAS_SET="${APP_USER+x}"
+APP_GROUP_WAS_SET="${APP_GROUP+x}"
+RUNTIME_USER_WAS_SET="${RUNTIME_USER+x}"
+RUNTIME_GROUP_WAS_SET="${RUNTIME_GROUP+x}"
+RUNTIME_HOME_WAS_SET="${RUNTIME_HOME+x}"
+OPENCLAW_BIN_WAS_SET="${OPENCLAW_BIN+x}"
+NANOBOT_BIN_WAS_SET="${NANOBOT_BIN+x}"
+SESSION_SECRET_WAS_SET="${SESSION_SECRET+x}"
+BOOTSTRAP_ADMIN_PASSWORD_WAS_SET="${BOOTSTRAP_ADMIN_PASSWORD+x}"
+
 APP_USER="${APP_USER:-claw-manager}"
 APP_GROUP="${APP_GROUP:-$APP_USER}"
 RUNTIME_USER="${RUNTIME_USER:-$APP_USER}"
@@ -144,17 +154,51 @@ print(token_urlsafe(32))
 PY
 }
 
+read_env_value() {
+  local key="$1"
+  awk -F= -v target="$key" '$1 == target {print substr($0, index($0, "=") + 1); exit}' "$ENV_FILE"
+}
+
 load_existing_env() {
   if [ ! -f "$ENV_FILE" ]; then
     return
   fi
-  if [ -z "${SESSION_SECRET:-}" ]; then
-    SESSION_SECRET="$(awk -F= '$1 == "SESSION_SECRET" {print substr($0, index($0, "=") + 1); exit}' "$ENV_FILE")"
+  if [ -z "$APP_USER_WAS_SET" ]; then
+    APP_USER="$(read_env_value APP_USER)"
   fi
-  if [ -z "${BOOTSTRAP_ADMIN_PASSWORD:-}" ]; then
-    BOOTSTRAP_ADMIN_PASSWORD="$(
-      awk -F= '$1 == "BOOTSTRAP_ADMIN_PASSWORD" {print substr($0, index($0, "=") + 1); exit}' "$ENV_FILE"
-    )"
+  if [ -z "$APP_GROUP_WAS_SET" ]; then
+    APP_GROUP="$(read_env_value APP_GROUP)"
+  fi
+  if [ -z "$RUNTIME_USER_WAS_SET" ]; then
+    RUNTIME_USER="$(read_env_value RUNTIME_USER)"
+  fi
+  if [ -z "$RUNTIME_GROUP_WAS_SET" ]; then
+    RUNTIME_GROUP="$(read_env_value RUNTIME_GROUP)"
+  fi
+  if [ -z "$RUNTIME_HOME_WAS_SET" ]; then
+    RUNTIME_HOME="$(read_env_value RUNTIME_HOME)"
+  fi
+  if [ -z "$OPENCLAW_BIN_WAS_SET" ]; then
+    OPENCLAW_BIN="$(read_env_value OPENCLAW_BIN)"
+  fi
+  if [ -z "$NANOBOT_BIN_WAS_SET" ]; then
+    NANOBOT_BIN="$(read_env_value NANOBOT_BIN)"
+  fi
+  if [ -z "$SESSION_SECRET_WAS_SET" ]; then
+    SESSION_SECRET="$(read_env_value SESSION_SECRET)"
+  fi
+  if [ -z "$BOOTSTRAP_ADMIN_PASSWORD_WAS_SET" ]; then
+    BOOTSTRAP_ADMIN_PASSWORD="$(read_env_value BOOTSTRAP_ADMIN_PASSWORD)"
+  fi
+
+  APP_USER="${APP_USER:-claw-manager}"
+  APP_GROUP="${APP_GROUP:-$APP_USER}"
+  RUNTIME_USER="${RUNTIME_USER:-$APP_USER}"
+  RUNTIME_GROUP="${RUNTIME_GROUP:-$APP_GROUP}"
+  OPENCLAW_BIN="${OPENCLAW_BIN:-/usr/local/bin/openclaw}"
+  NANOBOT_BIN="${NANOBOT_BIN:-/usr/local/bin/nanobot}"
+  if [ -z "$RUNTIME_HOME" ] && [ "$RUNTIME_USER" = "$APP_USER" ]; then
+    RUNTIME_HOME="$(resolve_user_home "$APP_USER")"
   fi
 }
 
@@ -290,6 +334,13 @@ write_env_file() {
   log "writing environment file $ENV_FILE"
   cat >"$ENV_FILE" <<EOF
 APP_ENV=$APP_ENV
+APP_USER=$APP_USER
+APP_GROUP=$APP_GROUP
+RUNTIME_USER=$RUNTIME_USER
+RUNTIME_GROUP=$RUNTIME_GROUP
+RUNTIME_HOME=$RUNTIME_HOME
+OPENCLAW_BIN=$OPENCLAW_BIN
+NANOBOT_BIN=$NANOBOT_BIN
 SESSION_SECRET=$SESSION_SECRET
 SQLITE_PATH=$SQLITE_PATH_DEFAULT
 WORKSPACE_ROOT=$WORKSPACE_ROOT_DEFAULT

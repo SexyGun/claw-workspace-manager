@@ -131,12 +131,21 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
 如果 OpenClaw / Nanobot 安装在当前登录用户的 `~/.local/bin`，推荐把运行时 unit 切到这个用户，而不是继续让 `claw-manager` 直接执行用户私有安装：
 
 ```bash
-sudo RUNTIME_USER=leechen \
+sudo env \
+  RUNTIME_USER=leechen \
   RUNTIME_HOME=/home/leechen \
   OPENCLAW_BIN=/home/leechen/.local/bin/openclaw \
   NANOBOT_BIN=/home/leechen/.local/bin/nanobot \
   bash deploy/install-native.sh
 ```
+
+这些运行时变量会被持久化到 `/etc/claw-workspace-manager.env`。首次成功执行后，后续直接运行：
+
+```bash
+sudo bash deploy/install-native.sh
+```
+
+脚本会自动沿用上一次保存的 `RUNTIME_USER`、`RUNTIME_HOME`、`OPENCLAW_BIN`、`NANOBOT_BIN` 配置。
 
 关键环境变量：
 

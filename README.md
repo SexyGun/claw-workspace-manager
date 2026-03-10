@@ -111,6 +111,8 @@ Vite 开发服务器会将 `/api` 代理到 `http://localhost:8000`。
 
 ```bash
 sudo bash deploy/install-native.sh
+sudo systemctl daemon-reload
+sudo systemctl restart claw-manager.service
 ```
 
 服务器需要预先安装：`python3`、`venv`、`npm`、`systemd`、`sudo`，以及可执行的 OpenClaw / Nanobot 二进制。

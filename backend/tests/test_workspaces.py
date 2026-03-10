@@ -191,3 +191,35 @@ def test_legacy_qq_config_shows_warning_and_requires_manual_reentry(client: Test
     assert "token" not in rendered["channels"]["qq"]
     assert "bot_uin" not in rendered["channels"]["qq"]
     assert rendered["channels"]["qq"]["app_id"] == ""
+
+
+def test_legacy_manager_nanobot_config_is_sanitized_on_rerender(client: TestClient, app_env):
+    login(client, "admin", "admin-password")
+    workspace = client.post("/api/workspaces", json={"name": "Legacy Manager Config"}).json()
+    workspace_id = workspace["id"]
+
+    local_config_path = Path(app_env["workspaces_local"]) / "1" / "legacy-manager-config" / ".nanobot" / "config.json"
+    local_config_path.write_text(
+        json.dumps(
+            {
+                "workspace": {"name": "legacy-manager-config", "slug": "legacy-manager-config"},
+                "channels": {
+                    "feishu": {"enabled": True, "app_id": "legacy-app", "app_secret": "legacy-secret"},
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    save_response = client.put(
+        f"/api/workspaces/{workspace_id}/nanobot-config",
+        json={"values": {"feishu": {"enabled": True, "app_id": "legacy-app", "app_secret": "legacy-secret"}}},
+    )
+    assert save_response.status_code == 200, save_response.text
+
+    runtime_config_path = Path(app_env["runtime_root"]) / "nanobot" / str(workspace_id) / "config.json"
+    runtime_payload = json.loads(runtime_config_path.read_text(encoding="utf-8"))
+    assert "workspace" not in runtime_payload
+    assert runtime_payload["agents"]["defaults"]["workspace"] == str(Path(workspace["host_path"]) / "workspace")

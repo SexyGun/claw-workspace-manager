@@ -106,6 +106,7 @@ OPENCLAW_CHANNEL_SCHEMA: dict[str, Any] = {
 
 OPENCLAW_FALLBACK_SEPARATOR = ","
 QQ_LEGACY_MIGRATION_WARNING = "QQ legacy config could not be migrated automatically; re-enter App ID and Secret."
+NANOBOT_ALLOWED_TOP_LEVEL_KEYS = {"agents", "channels", "providers", "gateway", "tools"}
 
 NANOBOT_LEGACY_CHANNEL_FIELDS: dict[str, set[str]] = {
     "feishu": {"webhook"},
@@ -533,7 +534,12 @@ def load_nanobot_instance_config(file_path: Path) -> dict[str, Any]:
         raise ValueError(f"invalid nanobot config json: {exc}") from exc
     if not isinstance(raw_values, dict):
         raise ValueError("nanobot config must be a JSON object")
-    return deep_merge(default_nanobot_instance_config(), raw_values)
+    sanitized_values = {
+        key: value
+        for key, value in raw_values.items()
+        if key in NANOBOT_ALLOWED_TOP_LEVEL_KEYS
+    }
+    return deep_merge(default_nanobot_instance_config(), sanitized_values)
 
 
 def render_nanobot_config_payload(

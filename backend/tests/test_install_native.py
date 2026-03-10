@@ -313,13 +313,41 @@ write_env_file
     assert f"HOST_WORKSPACE_ROOT={new_root}" in env_text
 
 
-def test_install_native_rejects_conflicting_legacy_and_new_workspace_roots(tmp_path: Path) -> None:
+def test_install_native_merges_disjoint_legacy_and_new_workspace_roots(tmp_path: Path) -> None:
     env = base_env(tmp_path)
     fake_home = Path(env["APP_HOME_OVERRIDE"])
     legacy_root = tmp_path / "legacy" / "workspaces"
     new_root = fake_home / "claw"
     (legacy_root / "7" / "legacy-space").mkdir(parents=True)
     (new_root / "9" / "new-space").mkdir(parents=True)
+    (legacy_root / "7" / "legacy-space" / "README.md").write_text("legacy", encoding="utf-8")
+    (new_root / "9" / "new-space" / "README.md").write_text("new", encoding="utf-8")
+
+    env["LEGACY_WORKSPACE_ROOT"] = str(legacy_root)
+
+    result = run_install_shell(
+        """
+ensure_single_user_runtime
+initialize_paths
+migrate_legacy_workspace_root_if_needed
+""",
+        env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not legacy_root.exists()
+    assert (new_root / "7" / "legacy-space" / "README.md").read_text(encoding="utf-8") == "legacy"
+    assert (new_root / "9" / "new-space" / "README.md").read_text(encoding="utf-8") == "new"
+    assert "merging workspace root from" in result.stdout
+
+
+def test_install_native_rejects_conflicting_legacy_and_new_workspace_roots(tmp_path: Path) -> None:
+    env = base_env(tmp_path)
+    fake_home = Path(env["APP_HOME_OVERRIDE"])
+    legacy_root = tmp_path / "legacy" / "workspaces"
+    new_root = fake_home / "claw"
+    (legacy_root / "7" / "shared-space").mkdir(parents=True)
+    (new_root / "7" / "shared-space").mkdir(parents=True)
 
     env["LEGACY_WORKSPACE_ROOT"] = str(legacy_root)
 
@@ -333,7 +361,7 @@ migrate_legacy_workspace_root_if_needed
     )
 
     assert result.returncode != 0
-    assert "both legacy workspace root" in result.stderr
+    assert "workspace root migration conflict for 7/shared-space" in result.stderr
 
 
 def test_install_native_rejects_separate_runtime_user(tmp_path: Path) -> None:

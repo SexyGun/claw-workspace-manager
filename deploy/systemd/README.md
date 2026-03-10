@@ -53,7 +53,7 @@ sudo env \
 sudo bash deploy/install-native.sh
 ```
 
-脚本会继续复用上一次保存的 workspace 根目录和二进制路径；`APP_USER` / `APP_GROUP` 默认每次都取当前 `sudo` 调用者。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，且新的 `~/claw` 目标目录不存在，会自动迁移到服务用户 home 下的新位置。如果这次执行的 `sudo` 调用者和上一次不同，脚本也会把旧 `<old_app_home>/claw` 自动迁到新的 `<new_app_home>/claw`。
+脚本会继续复用上一次保存的 workspace 根目录和二进制路径；`APP_USER` / `APP_GROUP` 默认每次都取当前 `sudo` 调用者。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，脚本会自动迁移或合并到服务用户 home 下的新 `~/claw` 目录；只有同一个 `<owner>/<slug>` 在新旧目录两边都存在时，才需要手工处理冲突。如果这次执行的 `sudo` 调用者和上一次不同，脚本也会把旧 `<old_app_home>/claw` 自动迁到新的 `<new_app_home>/claw`。
 
 OpenClaw / Nanobot 的二进制路径现在由 `/etc/claw-workspace-manager.env` 提供给 runtime unit；如果只是修正 `OPENCLAW_BIN` 或 `NANOBOT_BIN`，通常编辑 env 文件后直接重启对应 service 即可，不必重写 unit。若修改了 `APP_USER` / `APP_GROUP`，仍需要重新运行安装脚本并执行 `systemctl daemon-reload`。
 

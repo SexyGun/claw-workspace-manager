@@ -539,6 +539,11 @@ path_has_entries() {
   find "$path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .
 }
 
+path_has_nondirectory_entries() {
+  local path="$1"
+  find "$path" -mindepth 1 -maxdepth 1 ! -type d -print -quit 2>/dev/null | grep -q .
+}
+
 resolve_existing_managed_workspace_root() {
   local previous_home=""
 
@@ -558,6 +563,60 @@ resolve_existing_managed_workspace_root() {
   printf '%s\n' "$previous_home/claw"
 }
 
+validate_workspace_root_structure() {
+  local root="$1"
+  local label="$2"
+  local owner_dir=""
+
+  if [ ! -d "$root" ]; then
+    return
+  fi
+  if path_has_nondirectory_entries "$root"; then
+    die "$label $root contains unexpected files; move data manually"
+  fi
+
+  while IFS= read -r owner_dir; do
+    if path_has_nondirectory_entries "$owner_dir"; then
+      die "$label $root contains unexpected files under $(basename "$owner_dir"); move data manually"
+    fi
+  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d | sort)
+}
+
+merge_workspace_root_tree() {
+  local source_root="$1"
+  local target_root="$2"
+  local owner_dir=""
+  local workspace_dir=""
+  local owner_name=""
+  local workspace_name=""
+  local target_workspace_dir=""
+
+  validate_workspace_root_structure "$source_root" "legacy workspace root"
+  validate_workspace_root_structure "$target_root" "new workspace root"
+
+  log "merging workspace root from $source_root into $target_root"
+  install -d "$target_root"
+
+  while IFS= read -r owner_dir; do
+    owner_name="$(basename "$owner_dir")"
+    while IFS= read -r workspace_dir; do
+      workspace_name="$(basename "$workspace_dir")"
+      target_workspace_dir="$target_root/$owner_name/$workspace_name"
+      if [ -e "$target_workspace_dir" ]; then
+        die "workspace root migration conflict for $owner_name/$workspace_name between $source_root and $target_root"
+      fi
+      install -d "$target_root/$owner_name"
+      mv "$workspace_dir" "$target_workspace_dir"
+    done < <(find "$owner_dir" -mindepth 1 -maxdepth 1 -type d | sort)
+    rmdir "$owner_dir" 2>/dev/null || true
+  done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
+
+  if path_has_entries "$source_root"; then
+    die "legacy workspace root $source_root still contains unsupported entries after merge; move data manually"
+  fi
+  rmdir "$source_root" 2>/dev/null || true
+}
+
 migrate_workspace_root_tree() {
   local source_root="$1"
   local target_root="$2"
@@ -574,7 +633,8 @@ migrate_workspace_root_tree() {
       die "workspace root target exists and is not a directory: $target_root"
     fi
     if path_has_entries "$target_root"; then
-      die "both legacy workspace root $source_root and new workspace root $target_root exist; move data manually"
+      merge_workspace_root_tree "$source_root" "$target_root"
+      return
     fi
     rmdir "$target_root"
   fi

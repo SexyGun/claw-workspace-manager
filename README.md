@@ -155,7 +155,7 @@ sudo env \
 sudo bash deploy/install-native.sh
 ```
 
-脚本会继续复用上一次保存的 workspace 根目录和二进制路径配置；`APP_USER` / `APP_GROUP` 默认每次都取当前 `sudo` 调用者。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，脚本会自动迁移或合并到服务用户 home 下的新 `~/claw` 目录；只有同一个 `<owner>/<slug>` 在新旧目录两边都存在时，才需要手工处理冲突。如果这次执行的 `sudo` 调用者和上一次不同，脚本也会把旧 `<old_app_home>/claw` 自动迁到新的 `<new_app_home>/claw`。
+脚本会继续复用上一次保存的 `DATA_ROOT` / workspace 根目录和二进制路径配置；`APP_USER` / `APP_GROUP` 默认每次都取当前 `sudo` 调用者。现在默认的数据根、workspace 根、SQLite 路径和 runtime 状态目录都会一起落在服务用户 home 下的 `~/claw`。如果检测到旧默认目录 `/srv/claw` 仍在使用，脚本会自动把其中的 `workspaces`、`runtime`、`sqlite` 迁移或合并到新的 `~/claw`；只有同一个 `<owner>/<slug>` 在新旧目录两边都存在时，才需要手工处理冲突。如果这次执行的 `sudo` 调用者和上一次不同，脚本也会把旧 `<old_app_home>/claw` 自动迁到新的 `<new_app_home>/claw`。
 
 如果只是修正 OpenClaw / Nanobot 二进制路径，通常更新 `/etc/claw-workspace-manager.env` 后直接重启对应 runtime service 即可；只有修改 `APP_USER`、`APP_GROUP` 或 unit 模板时才需要重新运行安装脚本并 `daemon-reload`。
 
@@ -163,6 +163,7 @@ sudo bash deploy/install-native.sh
 
 - `APP_USER`：管理器服务用户，默认是当前 `sudo` 调用者；只有无法识别当前登录账户时才回退到 `claw-manager`
 - `APP_GROUP`：管理器服务组，默认取 `APP_USER` 的主组
+- `DATA_ROOT`：原生部署数据根目录，默认是服务用户 home 下的 `~/claw`
 - `SQLITE_PATH`：SQLite 数据库路径
 - `WORKSPACE_ROOT`：管理器读取 workspace 的本地路径
 - `HOST_WORKSPACE_ROOT`：workspace 宿主机根目录
@@ -211,9 +212,10 @@ sudo journalctl -u "claw-nanobot@<workspace_id>.service" -f
 
 ```bash
 sudo cat /etc/claw-workspace-manager.env
-sudo cat /srv/claw/runtime/openclaw/openclaw.json
-sudo cat "/srv/claw/runtime/nanobot/<workspace_id>/config.json"
-sudo cat "/srv/claw/runtime/nanobot/<workspace_id>/runtime.env"
+sudo grep -E '^(DATA_ROOT|SQLITE_PATH|WORKSPACE_ROOT|HOST_WORKSPACE_ROOT|RUNTIME_STATE_ROOT)=' /etc/claw-workspace-manager.env
+sudo cat /home/<app_user>/claw/runtime/openclaw/openclaw.json
+sudo cat "/home/<app_user>/claw/runtime/nanobot/<workspace_id>/config.json"
+sudo cat "/home/<app_user>/claw/runtime/nanobot/<workspace_id>/runtime.env"
 ```
 
 修改了 `systemd` 单元后重新加载：
@@ -231,6 +233,7 @@ sudo systemctl restart claw-manager.service
 - `slug` 由工作区名称规范化生成；如果结果为空，则回退为 `workspace`
 
 原生部署下，`<workspace_root>` 的默认值现在是服务用户 home 下的 `~/claw`。通常它会直接落到当前 `sudo` 调用者的 home，例如 `leechen` 执行安装时就是 `/home/leechen/claw`；只有在无法识别当前登录账户，或你显式指定 `APP_USER=claw-manager` 时，才会使用 `/opt/claw-workspace-manager/home/claw`。
+对应地，`DATA_ROOT`、`SQLITE_PATH` 和 `RUNTIME_STATE_ROOT` 的默认值也会一起落在同一个根下，分别是 `<workspace_root>`、`<workspace_root>/sqlite/app.db` 和 `<workspace_root>/runtime`。
 
 例如：
 

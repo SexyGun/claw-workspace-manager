@@ -8,13 +8,13 @@ User=claw-manager
 Group=claw-manager
 EnvironmentFile=/etc/claw-workspace-manager.env
 Environment=HOME=/opt/claw-workspace-manager/home
-Environment=CLAW_RUNTIME_ROOT=/srv/claw/runtime
-Environment=OPENCLAW_CONFIG_PATH=/srv/claw/runtime/openclaw/openclaw.json
+Environment=CLAW_RUNTIME_ROOT=/opt/claw-workspace-manager/home/claw/runtime
+Environment=OPENCLAW_CONFIG_PATH=/opt/claw-workspace-manager/home/claw/runtime/openclaw/openclaw.json
 ExecStart=/bin/sh -lc '"$OPENCLAW_BIN" gateway'
 ExecReload=/bin/kill -USR1 $MAINPID
 Restart=on-failure
 RestartSec=3
-WorkingDirectory=/srv/claw/runtime/openclaw
+WorkingDirectory=/opt/claw-workspace-manager/home/claw/runtime/openclaw
 
 [Install]
 WantedBy=multi-user.target

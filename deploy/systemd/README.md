@@ -53,7 +53,7 @@ sudo env \
 sudo bash deploy/install-native.sh
 ```
 
-脚本会继续复用上一次保存的 workspace 根目录和二进制路径；`APP_USER` / `APP_GROUP` 默认每次都取当前 `sudo` 调用者。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，脚本会自动迁移或合并到服务用户 home 下的新 `~/claw` 目录；只有同一个 `<owner>/<slug>` 在新旧目录两边都存在时，才需要手工处理冲突。如果这次执行的 `sudo` 调用者和上一次不同，脚本也会把旧 `<old_app_home>/claw` 自动迁到新的 `<new_app_home>/claw`。
+脚本会继续复用上一次保存的 `DATA_ROOT` / workspace 根目录和二进制路径；`APP_USER` / `APP_GROUP` 默认每次都取当前 `sudo` 调用者。现在默认的数据根、workspace 根、SQLite 路径和 runtime 状态目录都会一起落在服务用户 home 下的 `~/claw`。如果检测到旧默认目录 `/srv/claw` 仍在使用，脚本会自动把其中的 `workspaces`、`runtime`、`sqlite` 迁移或合并到新的 `~/claw`；只有同一个 `<owner>/<slug>` 在新旧目录两边都存在时，才需要手工处理冲突。如果这次执行的 `sudo` 调用者和上一次不同，脚本也会把旧 `<old_app_home>/claw` 自动迁到新的 `<new_app_home>/claw`。
 
 OpenClaw / Nanobot 的二进制路径现在由 `/etc/claw-workspace-manager.env` 提供给 runtime unit；如果只是修正 `OPENCLAW_BIN` 或 `NANOBOT_BIN`，通常编辑 env 文件后直接重启对应 service 即可，不必重写 unit。若修改了 `APP_USER` / `APP_GROUP`，仍需要重新运行安装脚本并执行 `systemctl daemon-reload`。
 
@@ -62,13 +62,15 @@ OpenClaw / Nanobot 的二进制路径现在由 `/etc/claw-workspace-manager.env`
 - 应用目录：`/opt/claw-workspace-manager/app`
 - 虚拟环境：`/opt/claw-workspace-manager/venv`
 - 管理器环境文件：`/etc/claw-workspace-manager.env`
+- 数据根目录：`<app_user_home>/claw`
 - 工作区目录：`<app_user_home>/claw/<owner_user_id>/<slug>`
-- 运行时目录：`/srv/claw/runtime`
-- OpenClaw 聚合配置：`/srv/claw/runtime/openclaw/openclaw.json`
-- Nanobot 单工作区配置：`/srv/claw/runtime/nanobot/<workspace_id>/config.json`
-- Nanobot 单工作区环境文件：`/srv/claw/runtime/nanobot/<workspace_id>/runtime.env`
+- SQLite 数据库：`<app_user_home>/claw/sqlite/app.db`
+- 运行时目录：`<app_user_home>/claw/runtime`
+- OpenClaw 聚合配置：`<app_user_home>/claw/runtime/openclaw/openclaw.json`
+- Nanobot 单工作区配置：`<app_user_home>/claw/runtime/nanobot/<workspace_id>/config.json`
+- Nanobot 单工作区环境文件：`<app_user_home>/claw/runtime/nanobot/<workspace_id>/runtime.env`
 
-通常 `APP_USER` 会直接取当前 `sudo` 调用者，因此 `leechen` 执行安装时，`<app_user_home>` 就是 `/home/leechen`，默认工作区根目录会是 `/home/leechen/claw`。只有在无法识别当前登录账户，或你显式指定 `APP_USER=claw-manager` 时，才会使用 `/opt/claw-workspace-manager/home/claw`。
+通常 `APP_USER` 会直接取当前 `sudo` 调用者，因此 `leechen` 执行安装时，`<app_user_home>` 就是 `/home/leechen`，默认数据根和工作区根目录都会是 `/home/leechen/claw`。只有在无法识别当前登录账户，或你显式指定 `APP_USER=claw-manager` 时，才会使用 `/opt/claw-workspace-manager/home/claw`。
 
 ## 手工调整
 
@@ -100,5 +102,5 @@ sudo systemctl restart claw-manager.service
 - OpenClaw 采用单共享服务，多 workspace 通过聚合配置里的 `agents.list` 和 `bindings` 生效。
 - OpenClaw 共享服务通过 `OPENCLAW_CONFIG_PATH` 指向聚合配置文件，然后执行 `openclaw gateway`。
 - Nanobot 采用每工作区一个原生实例，`systemd` 通过实例目录内的 `runtime.env` 启动 `nanobot gateway --config ...`。
-- 旧版本默认把工作区放在 `/srv/claw/workspaces`；重新运行安装脚本时，如果仍检测到这个旧默认目录且新的 `~/claw` 目标目录不存在，脚本会自动迁移。
+- 旧版本默认把数据放在 `/srv/claw`，其中工作区位于 `/srv/claw/workspaces`；重新运行安装脚本时，脚本会自动把 `workspaces`、`runtime`、`sqlite` 迁移或合并到新的 `~/claw`。
 - 一键部署脚本只负责安装管理器，不负责下载 OpenClaw / Nanobot 二进制本身。

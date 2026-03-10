@@ -8,14 +8,14 @@ User=claw-manager
 Group=claw-manager
 EnvironmentFile=/etc/claw-workspace-manager.env
 Environment=HOME=/opt/claw-workspace-manager/home
-EnvironmentFile=/srv/claw/runtime/nanobot/%i/runtime.env
+EnvironmentFile=/opt/claw-workspace-manager/home/claw/runtime/nanobot/%i/runtime.env
 ExecStart=/bin/sh -lc '"$NANOBOT_BIN" gateway --config "$NANOBOT_CONFIG_PATH" --port "$NANOBOT_PORT"'
 KillMode=control-group
 KillSignal=SIGTERM
 TimeoutStopSec=15
 Restart=on-failure
 RestartSec=3
-WorkingDirectory=/srv/claw/runtime/nanobot/%i
+WorkingDirectory=/opt/claw-workspace-manager/home/claw/runtime/nanobot/%i
 
 [Install]
 WantedBy=multi-user.target

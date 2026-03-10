@@ -15,6 +15,7 @@ APP_GROUP_WAS_SET="${APP_GROUP+x}"
 RUNTIME_USER_WAS_SET="${RUNTIME_USER+x}"
 RUNTIME_GROUP_WAS_SET="${RUNTIME_GROUP+x}"
 RUNTIME_HOME_WAS_SET="${RUNTIME_HOME+x}"
+DATA_ROOT_WAS_SET="${DATA_ROOT+x}"
 SQLITE_PATH_WAS_SET="${SQLITE_PATH+x}"
 WORKSPACE_ROOT_WAS_SET="${WORKSPACE_ROOT+x}"
 HOST_WORKSPACE_ROOT_WAS_SET="${HOST_WORKSPACE_ROOT+x}"
@@ -54,9 +55,10 @@ RUNTIME_HOME="${RUNTIME_HOME:-}"
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/claw-workspace-manager}"
 APP_ROOT="${APP_ROOT:-$INSTALL_ROOT/app}"
 VENV_DIR="${VENV_DIR:-$INSTALL_ROOT/venv}"
-DATA_ROOT="${DATA_ROOT:-/srv/claw}"
+DATA_ROOT="${DATA_ROOT:-}"
 APP_HOME_OVERRIDE="${APP_HOME_OVERRIDE:-}"
 LEGACY_WORKSPACE_ROOT="${LEGACY_WORKSPACE_ROOT:-/srv/claw/workspaces}"
+LEGACY_DATA_ROOT="${LEGACY_DATA_ROOT:-$(dirname "$LEGACY_WORKSPACE_ROOT")}"
 SQLITE_PATH="${SQLITE_PATH:-}"
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-}"
 HOST_WORKSPACE_ROOT="${HOST_WORKSPACE_ROOT:-}"
@@ -88,15 +90,19 @@ PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
 PIP_RETRIES="${PIP_RETRIES:-5}"
 
 APP_HOME=""
+DATA_ROOT_DEFAULT=""
 SQLITE_PATH_DEFAULT=""
 WORKSPACE_ROOT_DEFAULT=""
 HOST_WORKSPACE_ROOT_DEFAULT=""
 RUNTIME_STATE_ROOT_DEFAULT=""
+EXISTING_ENV_DATA_ROOT=""
 EXISTING_ENV_APP_USER=""
 EXISTING_ENV_APP_GROUP=""
 EXISTING_ENV_RUNTIME_HOME=""
+EXISTING_ENV_SQLITE_PATH=""
 EXISTING_ENV_WORKSPACE_ROOT=""
 EXISTING_ENV_HOST_WORKSPACE_ROOT=""
+EXISTING_ENV_RUNTIME_STATE_ROOT=""
 WORKSPACE_TEMPLATE_ROOT_DEFAULT="$APP_ROOT/deploy/templates/base-workspace"
 OPENCLAW_WORKSPACE_TEMPLATE_ROOT_DEFAULT="$APP_ROOT/deploy/templates/openclaw-workspace"
 
@@ -232,11 +238,14 @@ load_existing_env() {
   if [ ! -f "$ENV_FILE" ]; then
     return
   fi
+  EXISTING_ENV_DATA_ROOT="$(read_env_value DATA_ROOT)"
   EXISTING_ENV_APP_USER="$(read_env_value APP_USER)"
   EXISTING_ENV_APP_GROUP="$(read_env_value APP_GROUP)"
   EXISTING_ENV_RUNTIME_HOME="$(read_env_value RUNTIME_HOME)"
+  EXISTING_ENV_SQLITE_PATH="$(read_env_value SQLITE_PATH)"
   EXISTING_ENV_WORKSPACE_ROOT="$(read_env_value WORKSPACE_ROOT)"
   EXISTING_ENV_HOST_WORKSPACE_ROOT="$(read_env_value HOST_WORKSPACE_ROOT)"
+  EXISTING_ENV_RUNTIME_STATE_ROOT="$(read_env_value RUNTIME_STATE_ROOT)"
   if [ -z "$APP_USER_WAS_SET" ]; then
     if [ -z "$CURRENT_SYSTEM_USER" ]; then
       APP_USER="$EXISTING_ENV_APP_USER"
@@ -255,6 +264,9 @@ load_existing_env() {
   fi
   if [ -z "$RUNTIME_HOME_WAS_SET" ]; then
     RUNTIME_HOME="$(read_env_value RUNTIME_HOME)"
+  fi
+  if [ -z "$DATA_ROOT_WAS_SET" ]; then
+    DATA_ROOT="$(read_env_value DATA_ROOT)"
   fi
   if [ -z "$SQLITE_PATH_WAS_SET" ]; then
     SQLITE_PATH="$(read_env_value SQLITE_PATH)"
@@ -516,21 +528,43 @@ warn_if_binary_unusable_by_service_user() {
 }
 
 initialize_paths() {
+  local previous_managed_root=""
+
+  previous_managed_root="$(resolve_existing_managed_data_root)"
+  DATA_ROOT_DEFAULT="$APP_HOME/claw"
+  if [ -z "$DATA_ROOT" ]; then
+    DATA_ROOT="$DATA_ROOT_DEFAULT"
+  elif [ -z "$DATA_ROOT_WAS_SET" ] && { [ "$DATA_ROOT" = "$LEGACY_DATA_ROOT" ] || { [ -n "$previous_managed_root" ] && [ "$DATA_ROOT" = "$previous_managed_root" ]; }; }; then
+    DATA_ROOT="$DATA_ROOT_DEFAULT"
+  fi
+
+  WORKSPACE_ROOT_DEFAULT="$DATA_ROOT"
+  HOST_WORKSPACE_ROOT_DEFAULT="$WORKSPACE_ROOT_DEFAULT"
   SQLITE_PATH_DEFAULT="$DATA_ROOT/sqlite/app.db"
   RUNTIME_STATE_ROOT_DEFAULT="$DATA_ROOT/runtime"
-  WORKSPACE_ROOT_DEFAULT="$APP_HOME/claw"
-  HOST_WORKSPACE_ROOT_DEFAULT="$WORKSPACE_ROOT_DEFAULT"
 
-  SQLITE_PATH="${SQLITE_PATH:-$SQLITE_PATH_DEFAULT}"
-  RUNTIME_STATE_ROOT="${RUNTIME_STATE_ROOT:-$RUNTIME_STATE_ROOT_DEFAULT}"
+  if [ -z "$SQLITE_PATH" ]; then
+    SQLITE_PATH="$SQLITE_PATH_DEFAULT"
+  elif [ -z "$SQLITE_PATH_WAS_SET" ] && { [ "$SQLITE_PATH" = "$LEGACY_DATA_ROOT/sqlite/app.db" ] || { [ -n "$previous_managed_root" ] && [ "$SQLITE_PATH" = "$previous_managed_root/sqlite/app.db" ]; }; }; then
+    SQLITE_PATH="$SQLITE_PATH_DEFAULT"
+  fi
 
-  if [ -z "$WORKSPACE_ROOT" ] || [ "$WORKSPACE_ROOT" = "$LEGACY_WORKSPACE_ROOT" ]; then
+  if [ -z "$RUNTIME_STATE_ROOT" ]; then
+    RUNTIME_STATE_ROOT="$RUNTIME_STATE_ROOT_DEFAULT"
+  elif [ -z "$RUNTIME_STATE_ROOT_WAS_SET" ] && { [ "$RUNTIME_STATE_ROOT" = "$LEGACY_DATA_ROOT/runtime" ] || { [ -n "$previous_managed_root" ] && [ "$RUNTIME_STATE_ROOT" = "$previous_managed_root/runtime" ]; }; }; then
+    RUNTIME_STATE_ROOT="$RUNTIME_STATE_ROOT_DEFAULT"
+  fi
+
+  if [ -z "$WORKSPACE_ROOT" ]; then
+    WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
+  elif [ -z "$WORKSPACE_ROOT_WAS_SET" ] && { [ "$WORKSPACE_ROOT" = "$LEGACY_WORKSPACE_ROOT" ] || { [ -n "$previous_managed_root" ] && [ "$WORKSPACE_ROOT" = "$previous_managed_root" ]; }; }; then
     WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
   fi
+
   if [ -z "$HOST_WORKSPACE_ROOT" ]; then
     HOST_WORKSPACE_ROOT="$WORKSPACE_ROOT"
-  elif [ "$HOST_WORKSPACE_ROOT" = "$LEGACY_WORKSPACE_ROOT" ]; then
-    HOST_WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
+  elif [ -z "$HOST_WORKSPACE_ROOT_WAS_SET" ] && { [ "$HOST_WORKSPACE_ROOT" = "$LEGACY_WORKSPACE_ROOT" ] || { [ -n "$previous_managed_root" ] && [ "$HOST_WORKSPACE_ROOT" = "$previous_managed_root" ]; }; }; then
+    HOST_WORKSPACE_ROOT="$HOST_WORKSPACE_ROOT_DEFAULT"
   fi
 }
 
@@ -544,8 +578,9 @@ path_has_nondirectory_entries() {
   find "$path" -mindepth 1 -maxdepth 1 ! -type d -print -quit 2>/dev/null | grep -q .
 }
 
-resolve_existing_managed_workspace_root() {
+resolve_existing_managed_data_root() {
   local previous_home=""
+  local previous_default_root=""
 
   if [ -n "$EXISTING_ENV_RUNTIME_HOME" ]; then
     previous_home="$EXISTING_ENV_RUNTIME_HOME"
@@ -557,62 +592,68 @@ resolve_existing_managed_workspace_root() {
     fi
   fi
 
+  if [ -n "$previous_home" ]; then
+    previous_default_root="$previous_home/claw"
+  fi
+  if [ -n "$EXISTING_ENV_DATA_ROOT" ]; then
+    if [ -n "$previous_default_root" ] && [ "$EXISTING_ENV_DATA_ROOT" = "$previous_default_root" ]; then
+      printf '%s\n' "$EXISTING_ENV_DATA_ROOT"
+    fi
+    return
+  fi
   if [ -z "$previous_home" ]; then
     return
   fi
-  printf '%s\n' "$previous_home/claw"
+  printf '%s\n' "$previous_default_root"
 }
 
-validate_workspace_root_structure() {
-  local root="$1"
-  local label="$2"
-  local owner_dir=""
+merge_workspace_owner_dir_into_target() {
+  local owner_dir="$1"
+  local target_root="$2"
+  local source_base="$3"
+  local target_base="$4"
+  local owner_name=""
+  local workspace_dir=""
+  local workspace_name=""
+  local target_workspace_dir=""
 
-  if [ ! -d "$root" ]; then
-    return
-  fi
-  if path_has_nondirectory_entries "$root"; then
-    die "$label $root contains unexpected files; move data manually"
+  owner_name="$(basename "$owner_dir")"
+  if path_has_nondirectory_entries "$owner_dir"; then
+    die "workspace root $source_base contains unexpected files under $owner_name; move data manually"
   fi
 
-  while IFS= read -r owner_dir; do
-    if path_has_nondirectory_entries "$owner_dir"; then
-      die "$label $root contains unexpected files under $(basename "$owner_dir"); move data manually"
+  while IFS= read -r workspace_dir; do
+    workspace_name="$(basename "$workspace_dir")"
+    target_workspace_dir="$target_root/$owner_name/$workspace_name"
+    if [ -e "$target_workspace_dir" ]; then
+      die "workspace root migration conflict for $owner_name/$workspace_name between $source_base and $target_base"
     fi
-  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d | sort)
+    install -d "$target_root/$owner_name"
+    mv "$workspace_dir" "$target_workspace_dir"
+  done < <(find "$owner_dir" -mindepth 1 -maxdepth 1 -type d | sort)
+
+  if path_has_entries "$owner_dir"; then
+    die "workspace root source $source_base still contains unsupported entries after merge; move data manually"
+  fi
+  rmdir "$owner_dir" 2>/dev/null || true
 }
 
 merge_workspace_root_tree() {
   local source_root="$1"
   local target_root="$2"
   local owner_dir=""
-  local workspace_dir=""
-  local owner_name=""
-  local workspace_name=""
-  local target_workspace_dir=""
 
-  validate_workspace_root_structure "$source_root" "legacy workspace root"
-  validate_workspace_root_structure "$target_root" "new workspace root"
+  if path_has_nondirectory_entries "$source_root"; then
+    die "workspace root $source_root contains unexpected files; move data manually"
+  fi
 
-  log "merging workspace root from $source_root into $target_root"
   install -d "$target_root"
-
   while IFS= read -r owner_dir; do
-    owner_name="$(basename "$owner_dir")"
-    while IFS= read -r workspace_dir; do
-      workspace_name="$(basename "$workspace_dir")"
-      target_workspace_dir="$target_root/$owner_name/$workspace_name"
-      if [ -e "$target_workspace_dir" ]; then
-        die "workspace root migration conflict for $owner_name/$workspace_name between $source_root and $target_root"
-      fi
-      install -d "$target_root/$owner_name"
-      mv "$workspace_dir" "$target_workspace_dir"
-    done < <(find "$owner_dir" -mindepth 1 -maxdepth 1 -type d | sort)
-    rmdir "$owner_dir" 2>/dev/null || true
+    merge_workspace_owner_dir_into_target "$owner_dir" "$target_root" "$source_root" "$target_root"
   done < <(find "$source_root" -mindepth 1 -maxdepth 1 -type d | sort)
 
   if path_has_entries "$source_root"; then
-    die "legacy workspace root $source_root still contains unsupported entries after merge; move data manually"
+    die "workspace root source $source_root still contains unsupported entries after merge; move data manually"
   fi
   rmdir "$source_root" 2>/dev/null || true
 }
@@ -633,6 +674,7 @@ migrate_workspace_root_tree() {
       die "workspace root target exists and is not a directory: $target_root"
     fi
     if path_has_entries "$target_root"; then
+      log "merging workspace root from $source_root into $target_root"
       merge_workspace_root_tree "$source_root" "$target_root"
       return
     fi
@@ -644,34 +686,221 @@ migrate_workspace_root_tree() {
   mv "$source_root" "$target_root"
 }
 
-migrate_previous_managed_workspace_root_if_needed() {
-  local previous_managed_root=""
+merge_directory_tree() {
+  local source_root="$1"
+  local target_root="$2"
+  local label="$3"
+  local relative_prefix="${4:-}"
+  local source_base="${5:-$source_root}"
+  local target_base="${6:-$target_root}"
+  local source_entry=""
+  local entry_name=""
+  local target_entry=""
+  local relative_path=""
 
-  if [ -n "$WORKSPACE_ROOT_WAS_SET" ] || [ -n "$HOST_WORKSPACE_ROOT_WAS_SET" ]; then
-    return
-  fi
+  install -d "$target_root"
 
-  previous_managed_root="$(resolve_existing_managed_workspace_root)"
-  if [ -z "$previous_managed_root" ] || [ "$previous_managed_root" = "$WORKSPACE_ROOT_DEFAULT" ]; then
-    return
-  fi
-  if [ "$WORKSPACE_ROOT" != "$previous_managed_root" ] || [ "$HOST_WORKSPACE_ROOT" != "$previous_managed_root" ]; then
-    return
-  fi
+  while IFS= read -r -d '' source_entry; do
+    entry_name="$(basename "$source_entry")"
+    target_entry="$target_root/$entry_name"
+    relative_path="$entry_name"
+    if [ -n "$relative_prefix" ]; then
+      relative_path="$relative_prefix/$entry_name"
+    fi
 
-  migrate_workspace_root_tree "$previous_managed_root" "$WORKSPACE_ROOT_DEFAULT"
-  WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
-  HOST_WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
+    if [ -L "$source_entry" ]; then
+      die "$label contains unsupported symlink at $relative_path; move data manually"
+    fi
+
+    if [ -d "$source_entry" ]; then
+      if [ -e "$target_entry" ]; then
+        if [ ! -d "$target_entry" ] || [ -L "$target_entry" ]; then
+          die "$label migration conflict for $relative_path between $source_base and $target_base"
+        fi
+        merge_directory_tree "$source_entry" "$target_entry" "$label" "$relative_path" "$source_base" "$target_base"
+        rmdir "$source_entry" 2>/dev/null || true
+      else
+        mv "$source_entry" "$target_entry"
+      fi
+      continue
+    fi
+
+    if [ -f "$source_entry" ]; then
+      if [ -e "$target_entry" ]; then
+        if [ ! -f "$target_entry" ]; then
+          die "$label migration conflict for $relative_path between $source_base and $target_base"
+        fi
+        if cmp -s "$source_entry" "$target_entry"; then
+          rm -f "$source_entry"
+        else
+          die "$label migration conflict for $relative_path between $source_base and $target_base"
+        fi
+      else
+        install -d "$(dirname "$target_entry")"
+        mv "$source_entry" "$target_entry"
+      fi
+      continue
+    fi
+
+    die "$label contains unsupported entry at $relative_path; move data manually"
+  done < <(find "$source_root" -mindepth 1 -maxdepth 1 -print0 | sort -z)
+
+  if path_has_entries "$source_root"; then
+    die "$label source $source_root still contains unsupported entries after merge; move data manually"
+  fi
+  rmdir "$source_root" 2>/dev/null || true
 }
 
-migrate_legacy_workspace_root_if_needed() {
-  if [ "$WORKSPACE_ROOT" != "$WORKSPACE_ROOT_DEFAULT" ] || [ "$HOST_WORKSPACE_ROOT" != "$WORKSPACE_ROOT_DEFAULT" ]; then
+migrate_directory_tree() {
+  local source_root="$1"
+  local target_root="$2"
+  local label="$3"
+
+  if [ -z "$source_root" ] || [ -z "$target_root" ] || [ "$source_root" = "$target_root" ]; then
     return
   fi
-  if [ -z "$LEGACY_WORKSPACE_ROOT" ] || [ "$LEGACY_WORKSPACE_ROOT" = "$WORKSPACE_ROOT" ] || [ ! -d "$LEGACY_WORKSPACE_ROOT" ]; then
+  if [ ! -e "$source_root" ]; then
     return
   fi
+
+  if [ -e "$target_root" ]; then
+    if [ ! -d "$target_root" ]; then
+      die "$label target exists and is not a directory: $target_root"
+    fi
+    if path_has_entries "$target_root"; then
+      log "merging $label from $source_root into $target_root"
+      merge_directory_tree "$source_root" "$target_root" "$label"
+      return
+    fi
+    rmdir "$target_root"
+  fi
+
+  log "migrating $label from $source_root to $target_root"
+  install -d "$(dirname "$target_root")"
+  mv "$source_root" "$target_root"
+}
+
+migrate_managed_data_root_tree() {
+  local source_root="$1"
+  local target_root="$2"
+  local source_entry=""
+  local entry_name=""
+  local source_runtime_root=""
+  local source_sqlite_root=""
+
+  if [ -z "$source_root" ] || [ -z "$target_root" ] || [ "$source_root" = "$target_root" ]; then
+    return
+  fi
+  if [ ! -d "$source_root" ]; then
+    return
+  fi
+
+  if [ -e "$target_root" ]; then
+    if [ ! -d "$target_root" ]; then
+      die "data root target exists and is not a directory: $target_root"
+    fi
+    if ! path_has_entries "$target_root"; then
+      rmdir "$target_root"
+    else
+      log "merging data root from $source_root into $target_root"
+      install -d "$target_root"
+      while IFS= read -r -d '' source_entry; do
+        entry_name="$(basename "$source_entry")"
+        case "$entry_name" in
+          runtime)
+            source_runtime_root="$source_entry"
+            migrate_directory_tree "$source_runtime_root" "$target_root/runtime" "runtime state root"
+            ;;
+          sqlite)
+            source_sqlite_root="$source_entry"
+            migrate_directory_tree "$source_sqlite_root" "$target_root/sqlite" "sqlite root"
+            ;;
+          *)
+            if [ -L "$source_entry" ] || [ ! -d "$source_entry" ]; then
+              die "data root $source_root contains unexpected entry $entry_name; move data manually"
+            fi
+            merge_workspace_owner_dir_into_target "$source_entry" "$target_root" "$source_root" "$target_root"
+            ;;
+        esac
+      done < <(find "$source_root" -mindepth 1 -maxdepth 1 -print0 | sort -z)
+
+      if path_has_entries "$source_root"; then
+        die "data root source $source_root still contains unsupported entries after merge; move data manually"
+      fi
+      rmdir "$source_root" 2>/dev/null || true
+      return
+    fi
+  fi
+
+  log "migrating data root from $source_root to $target_root"
+  install -d "$(dirname "$target_root")"
+  mv "$source_root" "$target_root"
+}
+
+migrate_previous_managed_data_root_if_needed() {
+  local previous_managed_root=""
+  local previous_sqlite_path=""
+  local previous_runtime_root=""
+
+  if [ -n "$DATA_ROOT_WAS_SET" ] || [ -n "$SQLITE_PATH_WAS_SET" ] || [ -n "$WORKSPACE_ROOT_WAS_SET" ] || [ -n "$HOST_WORKSPACE_ROOT_WAS_SET" ] || [ -n "$RUNTIME_STATE_ROOT_WAS_SET" ]; then
+    return
+  fi
+
+  previous_managed_root="$(resolve_existing_managed_data_root)"
+  if [ -z "$previous_managed_root" ] || [ "$previous_managed_root" = "$DATA_ROOT_DEFAULT" ]; then
+    return
+  fi
+
+  previous_sqlite_path="$previous_managed_root/sqlite/app.db"
+  previous_runtime_root="$previous_managed_root/runtime"
+
+  if [ -n "$EXISTING_ENV_WORKSPACE_ROOT" ] && [ "$EXISTING_ENV_WORKSPACE_ROOT" != "$previous_managed_root" ]; then
+    return
+  fi
+  if [ -n "$EXISTING_ENV_HOST_WORKSPACE_ROOT" ] && [ "$EXISTING_ENV_HOST_WORKSPACE_ROOT" != "$previous_managed_root" ]; then
+    return
+  fi
+  if [ -n "$EXISTING_ENV_SQLITE_PATH" ] && [ "$EXISTING_ENV_SQLITE_PATH" != "$previous_sqlite_path" ]; then
+    return
+  fi
+  if [ -n "$EXISTING_ENV_RUNTIME_STATE_ROOT" ] && [ "$EXISTING_ENV_RUNTIME_STATE_ROOT" != "$previous_runtime_root" ]; then
+    return
+  fi
+  if [ ! -d "$previous_managed_root" ]; then
+    return
+  fi
+
+  migrate_managed_data_root_tree "$previous_managed_root" "$DATA_ROOT_DEFAULT"
+  DATA_ROOT="$DATA_ROOT_DEFAULT"
+  WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
+  HOST_WORKSPACE_ROOT="$HOST_WORKSPACE_ROOT_DEFAULT"
+  SQLITE_PATH="$SQLITE_PATH_DEFAULT"
+  RUNTIME_STATE_ROOT="$RUNTIME_STATE_ROOT_DEFAULT"
+}
+
+migrate_legacy_data_root_if_needed() {
+  local legacy_runtime_root=""
+  local legacy_sqlite_root=""
+
+  if [ "$DATA_ROOT" != "$DATA_ROOT_DEFAULT" ] || [ "$WORKSPACE_ROOT" != "$WORKSPACE_ROOT_DEFAULT" ] || [ "$HOST_WORKSPACE_ROOT" != "$HOST_WORKSPACE_ROOT_DEFAULT" ] || [ "$SQLITE_PATH" != "$SQLITE_PATH_DEFAULT" ] || [ "$RUNTIME_STATE_ROOT" != "$RUNTIME_STATE_ROOT_DEFAULT" ]; then
+    return
+  fi
+  if [ -z "$LEGACY_DATA_ROOT" ] || [ "$LEGACY_DATA_ROOT" = "$DATA_ROOT" ] || [ ! -d "$LEGACY_DATA_ROOT" ]; then
+    return
+  fi
+
   migrate_workspace_root_tree "$LEGACY_WORKSPACE_ROOT" "$WORKSPACE_ROOT"
+
+  legacy_runtime_root="$LEGACY_DATA_ROOT/runtime"
+  migrate_directory_tree "$legacy_runtime_root" "$RUNTIME_STATE_ROOT" "runtime state root"
+
+  legacy_sqlite_root="$LEGACY_DATA_ROOT/sqlite"
+  migrate_directory_tree "$legacy_sqlite_root" "$(dirname "$SQLITE_PATH")" "sqlite root"
+
+  if path_has_entries "$LEGACY_DATA_ROOT"; then
+    die "legacy data root $LEGACY_DATA_ROOT still contains unsupported entries after migration; move data manually"
+  fi
+  rmdir "$LEGACY_DATA_ROOT" 2>/dev/null || true
 }
 
 ensure_directories() {
@@ -750,6 +979,7 @@ write_env_file() {
 APP_ENV=$APP_ENV
 APP_USER=$APP_USER
 APP_GROUP=$APP_GROUP
+DATA_ROOT=$DATA_ROOT
 RUNTIME_USER=$RUNTIME_USER
 RUNTIME_GROUP=$RUNTIME_GROUP
 RUNTIME_HOME=$RUNTIME_HOME
@@ -964,8 +1194,8 @@ main() {
   ensure_user
   ensure_single_user_runtime
   initialize_paths
-  migrate_previous_managed_workspace_root_if_needed
-  migrate_legacy_workspace_root_if_needed
+  migrate_previous_managed_data_root_if_needed
+  migrate_legacy_data_root_if_needed
   ensure_runtime_binaries
   warn_if_binary_unusable_by_service_user "OpenClaw" "$OPENCLAW_BIN" "$RUNTIME_USER"
   warn_if_binary_unusable_by_service_user "Nanobot" "$NANOBOT_BIN" "$RUNTIME_USER"

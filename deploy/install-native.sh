@@ -427,7 +427,8 @@ Group=$RUNTIME_GROUP
 Environment=HOME=$RUNTIME_HOME
 Environment=OPENCLAW_BIN=$OPENCLAW_BIN
 Environment=CLAW_RUNTIME_ROOT=$RUNTIME_STATE_ROOT_DEFAULT
-ExecStart=/bin/sh -lc '"\$OPENCLAW_BIN" gateway --config "\$CLAW_RUNTIME_ROOT/openclaw/openclaw.json"'
+Environment=OPENCLAW_CONFIG_PATH=$RUNTIME_STATE_ROOT_DEFAULT/openclaw/openclaw.json
+ExecStart=/bin/sh -lc '"\$OPENCLAW_BIN" gateway'
 ExecReload=/bin/kill -HUP \$MAINPID
 UMask=0002
 Restart=on-failure

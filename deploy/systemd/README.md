@@ -89,6 +89,7 @@ sudo systemctl restart claw-manager.service
 ## 注意
 
 - OpenClaw 采用单共享服务，多 workspace 通过聚合配置里的 `agents.list` 和 `bindings` 生效。
+- OpenClaw 共享服务通过 `OPENCLAW_CONFIG_PATH` 指向聚合配置文件，然后执行 `openclaw gateway`。
 - Nanobot 采用每工作区一个原生实例，`systemd` 通过实例目录内的 `runtime.env` 启动 `nanobot gateway --config ...`。
 - 当 `RUNTIME_USER` 与 `APP_USER` 不同时，安装脚本会把 `/srv/claw` 调整为共享组可写，并让运行时 unit 继承 `RUNTIME_HOME`。
 - 一键部署脚本只负责安装管理器，不负责下载 OpenClaw / Nanobot 二进制本身。

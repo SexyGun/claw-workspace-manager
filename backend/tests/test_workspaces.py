@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -81,6 +82,54 @@ def test_workspace_creation_renders_configs(client: TestClient, app_env):
     workspace_types_response = client.get("/api/workspace-types")
     assert workspace_types_response.status_code == 200
     assert {item["key"] for item in workspace_types_response.json()} == {"base", "openclaw"}
+
+
+def test_workspace_host_paths_reconcile_when_root_changes(app_env, monkeypatch: pytest.MonkeyPatch):
+    app.config.get_settings.cache_clear()
+    from app.db import Base, SessionLocal, engine
+    from app.main import app as app_instance
+
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    with TestClient(app_instance) as initial_client:
+        login(initial_client, "admin", "admin-password")
+        workspace = initial_client.post("/api/workspaces", json={"name": "Moved Root"}).json()
+
+    workspace_id = workspace["id"]
+    relative_path = Path(str(workspace["owner_user_id"])) / workspace["slug"]
+    old_local_workspace = Path(app_env["workspaces_local"]) / relative_path
+    new_local_root = Path(app_env["root"]) / "workspaces-local-migrated"
+    new_host_root = Path(app_env["root"]) / "workspaces-host-migrated"
+    new_local_workspace = new_local_root / relative_path
+
+    new_local_workspace.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(old_local_workspace), str(new_local_workspace))
+
+    monkeypatch.setenv("WORKSPACE_ROOT", str(new_local_root))
+    monkeypatch.setenv("HOST_WORKSPACE_ROOT", str(new_host_root))
+    app.config.get_settings.cache_clear()
+
+    with TestClient(app_instance) as migrated_client:
+        login(migrated_client, "admin", "admin-password")
+        detail_response = migrated_client.get(f"/api/workspaces/{workspace_id}")
+        assert detail_response.status_code == 200, detail_response.text
+        detail = detail_response.json()
+        expected_host_path = str(new_host_root / relative_path)
+        assert detail["workspace"]["host_path"] == expected_host_path
+        assert detail["runtime_status"]["workspace_path"] == f"{expected_host_path}/workspace"
+
+    runtime_config_path = Path(app_env["runtime_root"]) / "nanobot" / str(workspace_id) / "config.json"
+    runtime_payload = json.loads(runtime_config_path.read_text(encoding="utf-8"))
+    assert runtime_payload["agents"]["defaults"]["workspace"] == f"{expected_host_path}/workspace"
+
+    db = SessionLocal()
+    try:
+        refreshed = db.get(models.Workspace, workspace_id)
+        assert refreshed is not None
+        assert refreshed.host_path == expected_host_path
+    finally:
+        db.close()
 
 
 def test_workspace_access_isolation(client: TestClient):

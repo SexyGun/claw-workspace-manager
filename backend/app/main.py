@@ -19,7 +19,8 @@ from app.schema_compat import ensure_sqlite_schema_compatibility
 from app.services.auth import create_user
 from app.services.gateway import build_gateway_manager
 from app.services.openclaw_runtime import build_openclaw_runtime_manager
-from app.services.workspace import ensure_workspace_roots
+from app.services.workspace import ensure_workspace_roots, reconcile_workspace_host_paths
+from app.services.workspace_artifacts import reconcile_workspace_artifacts_for_host_path_changes
 
 
 def ensure_bootstrap_admin() -> None:
@@ -53,6 +54,10 @@ async def lifespan(app: FastAPI):
     openclaw_manager = build_openclaw_runtime_manager(settings)
     db = SessionLocal()
     try:
+        changed_workspace_ids = reconcile_workspace_host_paths(db, settings)
+        openclaw_paths_changed = reconcile_workspace_artifacts_for_host_path_changes(db, settings, changed_workspace_ids)
+        if openclaw_paths_changed:
+            openclaw_manager.reload_if_running(db)
         gateway_manager.sync_managed_containers(db)
         openclaw_manager.sync_managed_containers(db)
     finally:

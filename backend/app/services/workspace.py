@@ -46,6 +46,10 @@ def host_path_for_workspace(settings: Settings, owner_user_id: int, slug: str) -
     return settings.host_workspace_root / str(owner_user_id) / slug
 
 
+def expected_host_path(settings: Settings, workspace: models.Workspace) -> Path:
+    return host_path_for_workspace(settings, workspace.owner_user_id, workspace.slug)
+
+
 def local_path_from_host_path(settings: Settings, host_path: str | Path) -> Path:
     host_path = Path(host_path).resolve()
     host_root = settings.host_workspace_root.resolve()
@@ -60,6 +64,23 @@ def allocate_workspace_port(db: Session, settings: Settings) -> int:
     if current_max is None or current_max < settings.nanobot_port_base:
         return settings.nanobot_port_base
     return current_max + 1
+
+
+def reconcile_workspace_host_paths(db: Session, settings: Settings) -> list[int]:
+    changed_workspace_ids: list[int] = []
+    workspaces = db.scalars(select(models.Workspace).order_by(models.Workspace.id)).all()
+    for workspace in workspaces:
+        target_host_path = str(expected_host_path(settings, workspace))
+        if workspace.host_path == target_host_path:
+            continue
+        workspace.host_path = target_host_path
+        db.add(workspace)
+        changed_workspace_ids.append(workspace.id)
+
+    if changed_workspace_ids:
+        db.commit()
+
+    return changed_workspace_ids
 
 
 def format_nanobot_unit_name(template: str, workspace_id: int) -> str:

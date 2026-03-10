@@ -110,6 +110,30 @@ def render_workspace_artifacts(db: Session, workspace: models.Workspace, setting
         render_openclaw_service_artifacts(db, settings)
 
 
+def reconcile_workspace_artifacts_for_host_path_changes(
+    db: Session,
+    settings: Settings,
+    workspace_ids: list[int],
+) -> bool:
+    openclaw_changed = False
+
+    for workspace_id in workspace_ids:
+        workspace = load_workspace(db, workspace_id)
+        if workspace is None:
+            continue
+        if workspace.workspace_type == WORKSPACE_TYPE_BASE:
+            mark_workspace_runtime_for_restart(db, workspace)
+            render_workspace_artifacts(db, workspace, settings)
+            continue
+        if workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW:
+            openclaw_changed = True
+
+    if openclaw_changed:
+        render_openclaw_service_artifacts(db, settings)
+
+    return openclaw_changed
+
+
 def ensure_workspace_type(workspace: models.Workspace, expected_type: str, label: str) -> None:
     if workspace.workspace_type != expected_type:
         raise HTTPException(

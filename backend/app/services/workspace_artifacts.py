@@ -36,8 +36,10 @@ def render_openclaw_service_artifacts(db: Session, settings: Settings) -> None:
     aggregate_items: list[dict[str, object]] = []
     for workspace in workspaces:
         local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
+        openclaw_workspace_path = str(local_path / ".openclaw" / "workspace")
         openclaw_payload = config_renderer.render_openclaw_workspace_payload(
-            workspace.config.openclaw_config_json or config_renderer.default_openclaw_config()
+            workspace.config.openclaw_config_json or config_renderer.default_openclaw_config(),
+            workspace_path=openclaw_workspace_path,
         )
         workspace.config.openclaw_rendered_at = config_renderer.write_openclaw_config(
             local_path / ".openclaw" / "openclaw.json",
@@ -54,7 +56,7 @@ def render_openclaw_service_artifacts(db: Session, settings: Settings) -> None:
         aggregate_items.append(
             {
                 "workspace": workspace,
-                "workspace_path": str(local_path / ".openclaw" / "workspace"),
+                "workspace_path": openclaw_workspace_path,
                 "openclaw_config": workspace.config.openclaw_config_json or config_renderer.default_openclaw_config(),
                 "openclaw_channel": workspace.config.openclaw_channel_json or config_renderer.default_openclaw_channel_config(),
                 "openclaw_binding": workspace.config.openclaw_binding_json or config_renderer.default_openclaw_binding_config(),

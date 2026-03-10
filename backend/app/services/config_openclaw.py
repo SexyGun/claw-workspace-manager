@@ -591,7 +591,7 @@ def build_openclaw_gateway_config(port: int) -> dict[str, Any]:
     }
 
 
-def render_openclaw_workspace_payload(openclaw_config: dict[str, Any]) -> dict[str, Any]:
+def render_openclaw_workspace_payload(openclaw_config: dict[str, Any], workspace_path: str) -> dict[str, Any]:
     validated = validate_openclaw_config(openclaw_config)
     return {
         "gateway": build_openclaw_gateway_config(7331),
@@ -601,7 +601,7 @@ def render_openclaw_workspace_payload(openclaw_config: dict[str, Any]) -> dict[s
         "cron": copy.deepcopy(validated.get("cron", {})),
         "agents": {
             "defaults": {
-                "workspace": "~/.openclaw/workspace",
+                "workspace": workspace_path,
                 "model": copy.deepcopy(validated.get("model", {})),
                 "sandbox": copy.deepcopy(validated.get("sandbox", {})),
             }

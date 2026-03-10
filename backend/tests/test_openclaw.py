@@ -78,6 +78,7 @@ def test_openclaw_workspace_creation_and_aggregate_rendering(client: TestClient,
     assert payload["gateway"]["mode"] == "local"
     assert "model" not in payload
     assert "sandbox" not in payload
+    assert payload["agents"]["defaults"]["workspace"] == str(workspace_dir)
     assert payload["agents"]["defaults"]["model"]["primary"] == "claude-3-7-sonnet"
     assert payload["agents"]["defaults"]["sandbox"]["mode"] == "non-main"
     assert payload["session"]["dmScope"] == "main"
@@ -132,10 +133,12 @@ def test_openclaw_config_supports_explicit_provider_fields_and_masks_secret(clie
     assert MASKED_VALUE in detail["openclaw_config"]["raw_json5"]
 
     rendered_path = Path(app_env["workspaces_local"]) / "1" / "provider-lab" / ".openclaw" / "openclaw.json"
+    rendered_workspace_path = Path(app_env["workspaces_local"]) / "1" / "provider-lab" / ".openclaw" / "workspace"
     payload = json.loads(rendered_path.read_text(encoding="utf-8"))
     assert payload["gateway"]["mode"] == "local"
     assert "model" not in payload
     assert "sandbox" not in payload
+    assert payload["agents"]["defaults"]["workspace"] == str(rendered_workspace_path)
     provider = payload["models"]["providers"]["moonshot"]
     assert provider["baseUrl"] == "https://api.moonshot.ai/v1"
     assert provider["apiKey"] == "${MOONSHOT_API_KEY}"

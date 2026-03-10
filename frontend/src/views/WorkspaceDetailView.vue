@@ -87,6 +87,69 @@
 
           <n-grid-item>
             <n-space vertical size="large">
+              <n-card title="Agent Defaults" class="panel-card">
+                <template #header-extra>
+                  <div class="card-path">
+                    <n-text depth="3">{{ summary.nanobot_agent_config?.rendered_path }}</n-text>
+                  </div>
+                </template>
+                <n-form :model="agentValues" label-placement="top">
+                  <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
+                    <n-grid-item v-for="field in summary.nanobot_agent_config?.schema.fields || []" :key="field.key">
+                      <n-form-item :label="field.label">
+                        <n-select
+                          v-if="field.type === 'select'"
+                          :value="agentSelectValue(field.key)"
+                          @update:value="updateAgentText(field.key, $event)"
+                          :options="field.options?.map((value) => ({ label: value, value }))"
+                        />
+                        <n-input
+                          v-else
+                          :value="agentTextValue(field.key)"
+                          @update:value="updateAgentText(field.key, $event)"
+                        />
+                      </n-form-item>
+                    </n-grid-item>
+                  </n-grid>
+                  <n-button type="primary" :loading="savingAgent" @click="handleSaveAgent">保存 Agent Defaults</n-button>
+                </n-form>
+              </n-card>
+
+              <n-card title="Providers 配置" class="panel-card">
+                <template #header-extra>
+                  <div class="card-path">
+                    <n-text depth="3">{{ summary.nanobot_provider_config?.rendered_path }}</n-text>
+                  </div>
+                </template>
+                <n-space vertical size="large">
+                  <n-card
+                    v-for="section in summary.nanobot_provider_config?.schema.sections || []"
+                    :key="section.key"
+                    embedded
+                    class="section-card"
+                  >
+                    <template #header>{{ section.title }}</template>
+                    <n-form :model="providerValues[section.key]" label-placement="top">
+                      <n-grid cols="1" responsive="screen" :x-gap="12">
+                        <n-grid-item v-for="field in section.fields" :key="field.key">
+                          <n-form-item :label="field.label">
+                            <n-input
+                              :value="providerTextValue(section.key, field.key)"
+                              @update:value="updateProviderText(section.key, field.key, $event)"
+                              :type="field.type === 'password' ? 'password' : field.type === 'textarea' ? 'textarea' : 'text'"
+                              :autosize="field.type === 'textarea' ? { minRows: 3, maxRows: 6 } : undefined"
+                              :placeholder="field.placeholder"
+                              show-password-on="click"
+                            />
+                          </n-form-item>
+                        </n-grid-item>
+                      </n-grid>
+                    </n-form>
+                  </n-card>
+                  <n-button type="primary" :loading="savingProviders" @click="handleSaveProviders">保存 Providers 配置</n-button>
+                </n-space>
+              </n-card>
+
               <n-card title="实例运行状态" class="panel-card">
                 <runtime-status-card :status="summary.runtime_status" />
               </n-card>
@@ -247,7 +310,9 @@ import {
   getErrorMessage,
   restartOpenClawService,
   restartWorkspaceRuntime,
+  saveAgentConfig,
   saveNanobotConfig,
+  saveProviderConfig,
   saveOpenClawChannelConfig,
   saveOpenClawConfig,
   startOpenClawService,
@@ -301,11 +366,15 @@ const workspaceId = computed(() => Number(route.params.id))
 const summary = ref<WorkspaceSummary | null>(null)
 const workspaceNameInput = ref('')
 const savingNanobot = ref(false)
+const savingAgent = ref(false)
+const savingProviders = ref(false)
 const savingOpenClaw = ref(false)
 const savingOpenClawChannel = ref(false)
 const openclawRawJson = ref('')
 
 const nanobotValues = reactive<Record<string, Record<string, unknown>>>({})
+const agentValues = reactive<Record<string, unknown>>({})
+const providerValues = reactive<Record<string, Record<string, unknown>>>({})
 const openclawValues = reactive<Record<string, unknown>>({})
 const openclawChannelValues = reactive<Record<string, unknown>>({})
 
@@ -366,6 +435,32 @@ function updateChannelText(section: string, field: string, value: string) {
   nanobotValues[section][field] = value
 }
 
+function agentTextValue(field: string) {
+  const value = agentValues[field]
+  return typeof value === 'string' ? value : ''
+}
+
+function agentSelectValue(field: string) {
+  const value = agentValues[field]
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function updateAgentText(field: string, value: string | null) {
+  agentValues[field] = value ?? ''
+}
+
+function providerTextValue(section: string, field: string) {
+  const value = providerValues[section]?.[field]
+  return typeof value === 'string' ? value : ''
+}
+
+function updateProviderText(section: string, field: string, value: string) {
+  if (!providerValues[section]) {
+    providerValues[section] = {}
+  }
+  providerValues[section][field] = value
+}
+
 function openclawBooleanValue(field: string) {
   return Boolean(openclawValues[field])
 }
@@ -421,6 +516,20 @@ function populateForms(nextSummary: WorkspaceSummary) {
     }
   }
 
+  resetObject(agentValues)
+  if (nextSummary.nanobot_agent_config) {
+    Object.assign(agentValues, nextSummary.nanobot_agent_config.values)
+  }
+
+  for (const key of Object.keys(providerValues)) {
+    delete providerValues[key]
+  }
+  if (nextSummary.nanobot_provider_config) {
+    for (const [section, values] of Object.entries(nextSummary.nanobot_provider_config.values)) {
+      providerValues[section] = { ...(values as Record<string, unknown>) }
+    }
+  }
+
   resetObject(openclawValues)
   if (nextSummary.openclaw_config) {
     Object.assign(openclawValues, nextSummary.openclaw_config.values)
@@ -465,6 +574,32 @@ async function handleSaveNanobot() {
     message.error(getErrorMessage(error))
   } finally {
     savingNanobot.value = false
+  }
+}
+
+async function handleSaveAgent() {
+  savingAgent.value = true
+  try {
+    await saveAgentConfig(workspaceId.value, agentValues)
+    message.success('Agent Defaults 已保存')
+    await refreshSummary()
+  } catch (error) {
+    message.error(getErrorMessage(error))
+  } finally {
+    savingAgent.value = false
+  }
+}
+
+async function handleSaveProviders() {
+  savingProviders.value = true
+  try {
+    await saveProviderConfig(workspaceId.value, providerValues)
+    message.success('Providers 配置已保存')
+    await refreshSummary()
+  } catch (error) {
+    message.error(getErrorMessage(error))
+  } finally {
+    savingProviders.value = false
   }
 }
 

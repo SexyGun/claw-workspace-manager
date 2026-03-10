@@ -126,6 +126,28 @@ def serialize_nanobot_config(workspace: models.Workspace, settings: Settings) ->
     )
 
 
+def serialize_nanobot_provider_config(workspace: models.Workspace, settings: Settings) -> WorkspaceConfigRead:
+    local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
+    base_config = config_renderer.load_nanobot_instance_config(local_path / ".nanobot" / "config.json")
+    return WorkspaceConfigRead(
+        schema=config_renderer.PROVIDER_SCHEMA,
+        values=config_renderer.mask_provider_config(base_config),
+        rendered_path=str(local_path / ".nanobot" / "config.json"),
+        rendered_at=workspace.config.nanobot_rendered_at,
+    )
+
+
+def serialize_nanobot_agent_config(workspace: models.Workspace, settings: Settings) -> WorkspaceConfigRead:
+    local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
+    base_config = config_renderer.load_nanobot_instance_config(local_path / ".nanobot" / "config.json")
+    return WorkspaceConfigRead(
+        schema=config_renderer.AGENT_DEFAULTS_SCHEMA,
+        values=config_renderer.extract_agent_defaults_config(base_config),
+        rendered_path=str(local_path / ".nanobot" / "config.json"),
+        rendered_at=workspace.config.nanobot_rendered_at,
+    )
+
+
 def serialize_openclaw_config(workspace: models.Workspace, settings: Settings) -> OpenClawConfigRead:
     local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
     openclaw_values = workspace.config.openclaw_config_json or config_renderer.default_openclaw_config()
@@ -355,6 +377,8 @@ def get_workspace_api(
     summary = WorkspaceSummary(workspace=serialize_workspace(workspace))
     if workspace.workspace_type == WORKSPACE_TYPE_BASE:
         summary.nanobot_config = serialize_nanobot_config(workspace, settings)
+        summary.nanobot_agent_config = serialize_nanobot_agent_config(workspace, settings)
+        summary.nanobot_provider_config = serialize_nanobot_provider_config(workspace, settings)
         summary.runtime_status = serialize_runtime_status(gateway_manager.status(db, workspace))
     elif workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW:
         summary.openclaw_config = serialize_openclaw_config(workspace, settings)
@@ -422,6 +446,92 @@ def put_nanobot_config_api(
     workspace = load_workspace(db, workspace.id)
     assert workspace is not None
     return serialize_nanobot_config(workspace, settings)
+
+
+@router.get("/{workspace_id}/provider-config", response_model=WorkspaceConfigRead)
+def get_provider_config_api(
+    workspace_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+) -> WorkspaceConfigRead:
+    workspace = get_workspace_for_user(workspace_id, current_user, db)
+    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "provider")
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    return serialize_nanobot_provider_config(workspace, settings)
+
+
+@router.get("/{workspace_id}/agent-config", response_model=WorkspaceConfigRead)
+def get_agent_config_api(
+    workspace_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+) -> WorkspaceConfigRead:
+    workspace = get_workspace_for_user(workspace_id, current_user, db)
+    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "agent")
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    return serialize_nanobot_agent_config(workspace, settings)
+
+
+@router.put("/{workspace_id}/agent-config", response_model=WorkspaceConfigRead)
+def put_agent_config_api(
+    workspace_id: int,
+    payload: WorkspaceConfigPayload,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+) -> WorkspaceConfigRead:
+    workspace = get_workspace_for_user(workspace_id, current_user, db)
+    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "agent")
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
+    source_config_path = local_path / ".nanobot" / "config.json"
+    try:
+        base_config = config_renderer.load_nanobot_instance_config(source_config_path)
+        updated_config = config_renderer.merge_agent_defaults_config(base_config, payload.values)
+        config_renderer.validate_agent_defaults_config(updated_config)
+        config_renderer.write_nanobot_config(source_config_path, updated_config)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    mark_workspace_runtime_for_restart(db, workspace)
+    db.commit()
+    render_workspace_artifacts(db, workspace, settings)
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    return serialize_nanobot_agent_config(workspace, settings)
+
+
+@router.put("/{workspace_id}/provider-config", response_model=WorkspaceConfigRead)
+def put_provider_config_api(
+    workspace_id: int,
+    payload: WorkspaceConfigPayload,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+) -> WorkspaceConfigRead:
+    workspace = get_workspace_for_user(workspace_id, current_user, db)
+    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "provider")
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
+    source_config_path = local_path / ".nanobot" / "config.json"
+    try:
+        base_config = config_renderer.load_nanobot_instance_config(source_config_path)
+        updated_config = config_renderer.merge_provider_config(base_config, payload.values)
+        config_renderer.validate_provider_config(updated_config)
+        config_renderer.write_nanobot_config(source_config_path, updated_config)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    mark_workspace_runtime_for_restart(db, workspace)
+    db.commit()
+    render_workspace_artifacts(db, workspace, settings)
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    return serialize_nanobot_provider_config(workspace, settings)
 
 
 @router.get("/{workspace_id}/gateway-config", response_model=WorkspaceConfigRead)

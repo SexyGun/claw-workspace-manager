@@ -45,6 +45,63 @@ CHANNEL_SCHEMA: dict[str, Any] = {
     ],
 }
 
+PROVIDER_SECTIONS: list[tuple[str, str]] = [
+    ("custom", "Custom"),
+    ("azure_openai", "Azure OpenAI"),
+    ("anthropic", "Anthropic"),
+    ("openai", "OpenAI"),
+    ("openrouter", "OpenRouter"),
+    ("deepseek", "DeepSeek"),
+    ("groq", "Groq"),
+    ("zhipu", "Zhipu AI"),
+    ("dashscope", "DashScope"),
+    ("vllm", "vLLM / Local"),
+    ("gemini", "Gemini"),
+    ("moonshot", "Moonshot"),
+    ("minimax", "MiniMax"),
+    ("aihubmix", "AiHubMix"),
+    ("siliconflow", "SiliconFlow"),
+    ("volcengine", "VolcEngine"),
+    ("openai_codex", "OpenAI Codex"),
+    ("github_copilot", "Github Copilot"),
+]
+
+PROVIDER_SCHEMA: dict[str, Any] = {
+    "title": "Nanobot Providers",
+    "type": "object",
+    "sections": [
+        {
+            "key": key,
+            "title": title,
+            "fields": [
+                {"key": "api_key", "label": "API Key", "type": "password", "sensitive": True},
+                {"key": "api_base", "label": "API Base", "type": "text"},
+                {
+                    "key": "extra_headers_json",
+                    "label": "Extra Headers JSON",
+                    "type": "textarea",
+                    "placeholder": '{"APP-Code":"..."}',
+                },
+            ],
+        }
+        for key, title in PROVIDER_SECTIONS
+    ],
+}
+
+AGENT_DEFAULTS_SCHEMA: dict[str, Any] = {
+    "title": "Nanobot Agent Defaults",
+    "type": "object",
+    "fields": [
+        {"key": "model", "label": "Model", "type": "text"},
+        {
+            "key": "provider",
+            "label": "Provider",
+            "type": "select",
+            "options": ["auto"] + [key for key, _ in PROVIDER_SECTIONS],
+        },
+    ],
+}
+
 GATEWAY_SCHEMA: dict[str, Any] = {
     "title": "Gateway",
     "type": "object",
@@ -107,6 +164,7 @@ OPENCLAW_CHANNEL_SCHEMA: dict[str, Any] = {
 OPENCLAW_FALLBACK_SEPARATOR = ","
 QQ_LEGACY_MIGRATION_WARNING = "QQ legacy config could not be migrated automatically; re-enter App ID and Secret."
 NANOBOT_ALLOWED_TOP_LEVEL_KEYS = {"agents", "channels", "providers", "gateway", "tools"}
+PROVIDER_SENSITIVE_FIELDS = {"api_key"}
 
 NANOBOT_LEGACY_CHANNEL_FIELDS: dict[str, set[str]] = {
     "feishu": {"webhook"},
@@ -127,6 +185,24 @@ def default_gateway_config() -> dict[str, Any]:
     return {
         "listen_host": "127.0.0.1",
         "listen_port": 18080,
+    }
+
+
+def default_provider_config() -> dict[str, Any]:
+    return {
+        key: {
+            "api_key": "",
+            "api_base": "",
+            "extra_headers_json": "",
+        }
+        for key, _ in PROVIDER_SECTIONS
+    }
+
+
+def default_agent_defaults_config() -> dict[str, Any]:
+    return {
+        "model": "anthropic/claude-opus-4-5",
+        "provider": "auto",
     }
 
 
@@ -252,6 +328,38 @@ def _section_dict(values: dict[str, Any], key: str) -> dict[str, Any]:
     return section if isinstance(section, dict) else {}
 
 
+def _provider_section_to_form(section: dict[str, Any]) -> dict[str, Any]:
+    extra_headers = section.get("extra_headers")
+    extra_headers_json = ""
+    if isinstance(extra_headers, dict) and extra_headers:
+        extra_headers_json = json.dumps(extra_headers, indent=2, ensure_ascii=False)
+    return {
+        "api_key": _string_value(section.get("api_key")),
+        "api_base": _string_value(section.get("api_base")),
+        "extra_headers_json": extra_headers_json,
+    }
+
+
+def extract_agent_defaults_config(values: dict[str, Any] | None) -> dict[str, Any]:
+    defaults = get_nested_value(values or {}, ["agents", "defaults"], {})
+    if not isinstance(defaults, dict):
+        defaults = {}
+    extracted = default_agent_defaults_config()
+    extracted["model"] = _string_value(defaults.get("model")) or extracted["model"]
+    extracted["provider"] = _string_value(defaults.get("provider")) or extracted["provider"]
+    return extracted
+
+
+def extract_provider_config(values: dict[str, Any] | None) -> dict[str, Any]:
+    providers = values.get("providers", {}) if isinstance(values, dict) else {}
+    extracted = copy.deepcopy(default_provider_config())
+    for key, _ in PROVIDER_SECTIONS:
+        section = providers.get(key, {})
+        if isinstance(section, dict):
+            extracted[key] = _provider_section_to_form(section)
+    return extracted
+
+
 def normalize_channel_config(values: dict[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
     normalized = copy.deepcopy(default_channel_config())
     warnings: list[str] = []
@@ -295,6 +403,14 @@ def channel_config_warnings(values: dict[str, Any] | None) -> list[str]:
     return warnings
 
 
+def mask_provider_config(values: dict[str, Any] | None) -> dict[str, Any]:
+    masked = extract_provider_config(values)
+    for section_values in masked.values():
+        if section_values["api_key"]:
+            section_values["api_key"] = MASKED_VALUE
+    return masked
+
+
 def merge_channel_config(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged, _ = normalize_channel_config(existing)
     for section in CHANNEL_SCHEMA["sections"]:
@@ -311,6 +427,69 @@ def merge_channel_config(existing: dict[str, Any], incoming: dict[str, Any]) -> 
                 continue
             merged[section_key][field_key] = next_value
     return merged
+
+
+def _parse_extra_headers_json(value: Any) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("extra_headers_json must be string")
+    if not value.strip():
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"extra_headers_json must be valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("extra_headers_json must decode to a JSON object")
+    result: dict[str, str] = {}
+    for key, item in parsed.items():
+        if not isinstance(key, str) or not isinstance(item, str):
+            raise ValueError("extra_headers_json keys and values must be strings")
+        result[key] = item
+    return result
+
+
+def merge_provider_config(existing_config: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged_config = deep_merge(default_nanobot_instance_config(), existing_config or {})
+    current_form = extract_provider_config(merged_config)
+    providers = merged_config.setdefault("providers", {})
+    for section in PROVIDER_SCHEMA["sections"]:
+        section_key = section["key"]
+        input_section = incoming.get(section_key, {})
+        if not isinstance(input_section, dict):
+            continue
+        current_values = current_form[section_key]
+        next_values = copy.deepcopy(current_values)
+        for field in section["fields"]:
+            field_key = field["key"]
+            if field_key not in input_section:
+                continue
+            next_value = input_section[field_key]
+            if field.get("sensitive") and next_value == MASKED_VALUE:
+                continue
+            next_values[field_key] = next_value
+        providers[section_key] = {
+            "api_key": _string_value(next_values["api_key"]),
+            "api_base": _string_value(next_values["api_base"]) or None,
+            "extra_headers": _parse_extra_headers_json(next_values["extra_headers_json"]),
+        }
+    return merged_config
+
+
+def merge_agent_defaults_config(existing_config: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged_config = deep_merge(default_nanobot_instance_config(), existing_config or {})
+    current_form = extract_agent_defaults_config(merged_config)
+    next_values = copy.deepcopy(current_form)
+    for field in AGENT_DEFAULTS_SCHEMA["fields"]:
+        field_key = field["key"]
+        if field_key not in incoming:
+            continue
+        next_values[field_key] = incoming[field_key]
+    merged_config.setdefault("agents", {}).setdefault("defaults", {})
+    merged_config["agents"]["defaults"]["model"] = _string_value(next_values["model"]) or current_form["model"]
+    merged_config["agents"]["defaults"]["provider"] = _string_value(next_values["provider"]) or current_form["provider"]
+    return merged_config
 
 
 def merge_gateway_config(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -372,6 +551,28 @@ def validate_channel_config(values: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"{section_key}.{field['key']} must be boolean")
             if field["type"] in {"text", "password"} and not isinstance(value, str):
                 raise ValueError(f"{section_key}.{field['key']} must be string")
+    return merged
+
+
+def validate_provider_config(values: dict[str, Any]) -> dict[str, Any]:
+    merged = extract_provider_config(values)
+    for section in PROVIDER_SCHEMA["sections"]:
+        section_key = section["key"]
+        section_values = merged[section_key]
+        if not isinstance(section_values["api_key"], str):
+            raise ValueError(f"{section_key}.api_key must be string")
+        if not isinstance(section_values["api_base"], str):
+            raise ValueError(f"{section_key}.api_base must be string")
+        _parse_extra_headers_json(section_values["extra_headers_json"])
+    return merged
+
+
+def validate_agent_defaults_config(values: dict[str, Any]) -> dict[str, Any]:
+    merged = extract_agent_defaults_config(values)
+    if not isinstance(merged["model"], str) or not merged["model"].strip():
+        raise ValueError("agents.defaults.model must be non-empty string")
+    if not isinstance(merged["provider"], str) or merged["provider"] not in AGENT_DEFAULTS_SCHEMA["fields"][1]["options"]:
+        raise ValueError("agents.defaults.provider is not supported")
     return merged
 
 

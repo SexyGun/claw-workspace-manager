@@ -90,6 +90,8 @@ export interface OpenClawRoute {
 export interface WorkspaceSummary {
   workspace: Workspace
   nanobot_config?: WorkspaceConfigRead<ChannelSchema> | null
+  nanobot_agent_config?: WorkspaceConfigRead<FlatSchema> | null
+  nanobot_provider_config?: WorkspaceConfigRead<ChannelSchema> | null
   runtime_status?: RuntimeStatus | null
   openclaw_config?: OpenClawConfigRead | null
   openclaw_channel_config?: WorkspaceConfigRead<FlatSchema> | null

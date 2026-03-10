@@ -49,6 +49,9 @@ def test_workspace_creation_renders_configs(client: TestClient, app_env):
     assert config_payload["tools"]["restrict_to_workspace"] is True
     assert "feishu" in config_payload["channels"]
     assert workspace["activation_state"] == "inactive"
+    assert detail["nanobot_agent_config"]["values"]["model"] == "anthropic/claude-sonnet-4-5"
+    assert detail["nanobot_agent_config"]["values"]["provider"] == "auto"
+    assert detail["nanobot_provider_config"]["values"]["custom"]["api_base"] == "http://localhost:8000/v1"
     assert detail["runtime_status"]["listen_port"] == 18080
     assert detail["runtime_status"]["config_path"] == str(runtime_config_path)
     assert detail["runtime_status"]["workspace_path"] == str(Path(workspace["host_path"]) / "workspace")
@@ -150,6 +153,104 @@ def test_saving_nanobot_config_marks_running_workspace_for_restart(client: TestC
     restart_response = client.post(f"/api/workspaces/{workspace_id}/runtime/restart")
     assert restart_response.status_code == 200
     assert restart_response.json()["needs_restart"] is False
+
+
+def test_saving_provider_config_updates_runtime_config_and_masks_api_key(client: TestClient, app_env):
+    login(client, "admin", "admin-password")
+    workspace = client.post("/api/workspaces", json={"name": "Providers"}).json()
+    workspace_id = workspace["id"]
+
+    save_response = client.put(
+        f"/api/workspaces/{workspace_id}/provider-config",
+        json={
+            "values": {
+                "openrouter": {
+                    "api_key": "sk-or-test",
+                    "api_base": "https://openrouter.ai/api/v1",
+                    "extra_headers_json": '{"HTTP-Referer":"https://example.com","X-Title":"Claw"}',
+                }
+            }
+        },
+    )
+    assert save_response.status_code == 200, save_response.text
+    assert save_response.json()["values"]["openrouter"]["api_key"] == "__MASKED__"
+
+    detail_response = client.get(f"/api/workspaces/{workspace_id}")
+    assert detail_response.status_code == 200
+    provider_values = detail_response.json()["nanobot_provider_config"]["values"]["openrouter"]
+    assert provider_values["api_key"] == "__MASKED__"
+    assert provider_values["api_base"] == "https://openrouter.ai/api/v1"
+    assert provider_values["extra_headers_json"] == '{\n  "HTTP-Referer": "https://example.com",\n  "X-Title": "Claw"\n}'
+
+    runtime_config_path = Path(app_env["runtime_root"]) / "nanobot" / str(workspace_id) / "config.json"
+    runtime_payload = json.loads(runtime_config_path.read_text(encoding="utf-8"))
+    assert runtime_payload["providers"]["openrouter"]["api_key"] == "sk-or-test"
+    assert runtime_payload["providers"]["openrouter"]["api_base"] == "https://openrouter.ai/api/v1"
+    assert runtime_payload["providers"]["openrouter"]["extra_headers"]["X-Title"] == "Claw"
+
+
+def test_saving_agent_config_updates_runtime_config(client: TestClient, app_env):
+    login(client, "admin", "admin-password")
+    workspace = client.post("/api/workspaces", json={"name": "Agents"}).json()
+    workspace_id = workspace["id"]
+
+    save_response = client.put(
+        f"/api/workspaces/{workspace_id}/agent-config",
+        json={
+            "values": {
+                "model": "minimax/MiniMax-M2.5",
+                "provider": "minimax",
+            }
+        },
+    )
+    assert save_response.status_code == 200, save_response.text
+    assert save_response.json()["values"]["model"] == "minimax/MiniMax-M2.5"
+    assert save_response.json()["values"]["provider"] == "minimax"
+
+    detail_response = client.get(f"/api/workspaces/{workspace_id}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["nanobot_agent_config"]["values"]["model"] == "minimax/MiniMax-M2.5"
+    assert detail_response.json()["nanobot_agent_config"]["values"]["provider"] == "minimax"
+
+    runtime_config_path = Path(app_env["runtime_root"]) / "nanobot" / str(workspace_id) / "config.json"
+    runtime_payload = json.loads(runtime_config_path.read_text(encoding="utf-8"))
+    assert runtime_payload["agents"]["defaults"]["model"] == "minimax/MiniMax-M2.5"
+    assert runtime_payload["agents"]["defaults"]["provider"] == "minimax"
+
+
+def test_agent_config_rejects_unsupported_provider(client: TestClient):
+    login(client, "admin", "admin-password")
+    workspace_id = client.post("/api/workspaces", json={"name": "Bad Agent"}).json()["id"]
+
+    response = client.put(
+        f"/api/workspaces/{workspace_id}/agent-config",
+        json={
+            "values": {
+                "model": "gpt-4.1",
+                "provider": "not-real",
+            }
+        },
+    )
+    assert response.status_code == 400
+    assert "agents.defaults.provider is not supported" in response.json()["detail"]
+
+
+def test_provider_config_rejects_invalid_extra_headers_json(client: TestClient):
+    login(client, "admin", "admin-password")
+    workspace_id = client.post("/api/workspaces", json={"name": "Bad Providers"}).json()["id"]
+
+    response = client.put(
+        f"/api/workspaces/{workspace_id}/provider-config",
+        json={
+            "values": {
+                "custom": {
+                    "extra_headers_json": '{"APP-Code": 1}',
+                }
+            }
+        },
+    )
+    assert response.status_code == 400
+    assert "extra_headers_json keys and values must be strings" in response.json()["detail"]
 
 
 def test_legacy_qq_config_shows_warning_and_requires_manual_reentry(client: TestClient, app_env):

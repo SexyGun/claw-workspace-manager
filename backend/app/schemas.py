@@ -141,6 +141,8 @@ class OpenClawRouteRead(BaseModel):
 class WorkspaceSummary(BaseModel):
     workspace: WorkspaceRead
     nanobot_config: Optional[WorkspaceConfigRead] = None
+    nanobot_agent_config: Optional[WorkspaceConfigRead] = None
+    nanobot_provider_config: Optional[WorkspaceConfigRead] = None
     runtime_status: Optional[RuntimeStatusResponse] = None
     openclaw_config: Optional[OpenClawConfigRead] = None
     openclaw_channel_config: Optional[WorkspaceConfigRead] = None

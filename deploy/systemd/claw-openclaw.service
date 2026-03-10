@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=claw-manager
 Group=claw-manager
-Environment=OPENCLAW_BIN=/usr/local/bin/openclaw
+EnvironmentFile=/etc/claw-workspace-manager.env
 Environment=CLAW_RUNTIME_ROOT=/srv/claw/runtime
 Environment=OPENCLAW_CONFIG_PATH=/srv/claw/runtime/openclaw/openclaw.json
 ExecStart=/bin/sh -lc '"$OPENCLAW_BIN" gateway'

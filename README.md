@@ -139,6 +139,14 @@ sudo env \
   bash deploy/install-native.sh
 ```
 
+如果你已经设置了 `RUNTIME_USER` / `RUNTIME_HOME`，但没有显式传入 `OPENCLAW_BIN` 或 `NANOBOT_BIN`，脚本会优先尝试从该 runtime 用户的以下位置自动探测二进制：
+
+- `~/.npm-global/bin`
+- `~/.local/bin`
+- 该用户登录 shell 的 `PATH`
+
+如果你直接运行 `sudo bash deploy/install-native.sh` 且当前终端可交互，脚本在遇到 runtime 用户、home 或二进制权限/路径问题时，会直接提示你输入修正值，而不是要求你退出后重新拼一串长 `env`。
+
 这些运行时变量会被持久化到 `/etc/claw-workspace-manager.env`。首次成功执行后，后续直接运行：
 
 ```bash
@@ -146,6 +154,8 @@ sudo bash deploy/install-native.sh
 ```
 
 脚本会自动沿用上一次保存的 `RUNTIME_USER`、`RUNTIME_HOME`、`OPENCLAW_BIN`、`NANOBOT_BIN` 配置。
+
+如果只是修正 OpenClaw / Nanobot 二进制路径，通常更新 `/etc/claw-workspace-manager.env` 后直接重启对应 runtime service 即可；只有修改 `RUNTIME_USER`、`RUNTIME_GROUP` 或 unit 模板时才需要重新运行安装脚本并 `daemon-reload`。
 
 关键环境变量：
 

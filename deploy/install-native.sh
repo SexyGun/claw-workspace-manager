@@ -75,6 +75,48 @@ die() {
   exit 1
 }
 
+is_interactive_terminal() {
+  [ -t 0 ] && [ -t 1 ]
+}
+
+prompt_with_default() {
+  local prompt="$1"
+  local default_value="$2"
+  local response=""
+  if [ -n "$default_value" ]; then
+    printf '%s [%s]: ' "$prompt" "$default_value" >&2
+  else
+    printf '%s: ' "$prompt" >&2
+  fi
+  read -r response
+  if [ -z "$response" ]; then
+    printf '%s\n' "$default_value"
+    return
+  fi
+  printf '%s\n' "$response"
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default_answer="${2:-y}"
+  local response=""
+  local suffix="[Y/n]"
+
+  if [ "$default_answer" = "n" ]; then
+    suffix="[y/N]"
+  fi
+
+  while true; do
+    printf '%s %s: ' "$prompt" "$suffix" >&2
+    read -r response
+    response="${response:-$default_answer}"
+    case "$response" in
+      [Yy]|[Yy][Ee][Ss]) return 0 ;;
+      [Nn]|[Nn][Oo]) return 1 ;;
+    esac
+  done
+}
+
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
     die "run this script as root, for example: sudo bash deploy/install-native.sh"
@@ -229,22 +271,182 @@ resolve_user_home() {
   getent passwd "$username" | awk -F: '{print $6}'
 }
 
+detect_binary_for_user() {
+  local binary_name="$1"
+  local username="$2"
+  local user_home="$3"
+  local candidate=""
+  local -a home_candidates
+
+  home_candidates=(
+    "$user_home/.npm-global/bin/$binary_name"
+    "$user_home/.local/bin/$binary_name"
+  )
+
+  for candidate in "${home_candidates[@]}"; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  if candidate="$("$SUDO_BIN" -u "$username" env HOME="$user_home" /bin/sh -lc "command -v $binary_name" 2>/dev/null)"; then
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  fi
+}
+
+resolve_binary_path() {
+  local label="$1"
+  local binary_name="$2"
+  local configured_path="$3"
+  local username="$4"
+  local user_home="$5"
+  local detected_path=""
+
+  if [ -n "$configured_path" ] && [ -x "$configured_path" ]; then
+    printf '%s\n' "$configured_path"
+    return
+  fi
+
+  detected_path="$(detect_binary_for_user "$binary_name" "$username" "$user_home")"
+  if [ -n "$detected_path" ]; then
+    if [ -n "$configured_path" ] && [ "$configured_path" != "$detected_path" ]; then
+      warn "$label binary path $configured_path is unusable; switching to detected path $detected_path"
+    else
+      log "detected $label binary at $detected_path"
+    fi
+    printf '%s\n' "$detected_path"
+    return
+  fi
+
+  printf '%s\n' "$configured_path"
+}
+
+binary_issue_for_user() {
+  local bin_path="$1"
+  local service_user="$2"
+
+  if [ -z "$bin_path" ]; then
+    printf '%s\n' "binary path is empty"
+    return
+  fi
+  if [ ! -e "$bin_path" ]; then
+    printf '%s\n' "binary not found at $bin_path"
+    return
+  fi
+  if [ ! -x "$bin_path" ]; then
+    printf '%s\n' "binary exists at $bin_path but is not executable"
+    return
+  fi
+  if ! "$SUDO_BIN" -u "$service_user" env CLAW_BIN_PATH="$bin_path" /bin/sh -lc 'test -x "$CLAW_BIN_PATH"' 2>/dev/null; then
+    printf '%s\n' "binary at $bin_path is not executable by runtime user $service_user"
+    return
+  fi
+  printf '%s\n' ""
+}
+
+prompt_runtime_user_and_home() {
+  local suggested_user="$RUNTIME_USER"
+  local suggested_home="$RUNTIME_HOME"
+
+  while true; do
+    suggested_user="$(prompt_with_default "Enter runtime user" "${suggested_user:-$APP_USER}")"
+    if ! id "$suggested_user" >/dev/null 2>&1; then
+      warn "runtime user $suggested_user does not exist"
+      continue
+    fi
+    RUNTIME_USER="$suggested_user"
+    RUNTIME_GROUP="$(id -gn "$RUNTIME_USER")"
+    suggested_home="${RUNTIME_HOME:-$(resolve_user_home "$RUNTIME_USER")}"
+    while true; do
+      suggested_home="$(prompt_with_default "Enter runtime home for user $RUNTIME_USER" "$suggested_home")"
+      if [ -n "$suggested_home" ] && [ -d "$suggested_home" ]; then
+        RUNTIME_HOME="$suggested_home"
+        OPENCLAW_BIN="$(resolve_binary_path "OpenClaw" "openclaw" "$OPENCLAW_BIN" "$RUNTIME_USER" "$RUNTIME_HOME")"
+        NANOBOT_BIN="$(resolve_binary_path "Nanobot" "nanobot" "$NANOBOT_BIN" "$RUNTIME_USER" "$RUNTIME_HOME")"
+        return
+      fi
+      warn "runtime home is invalid: $suggested_home"
+    done
+  done
+}
+
+ensure_binary_access() {
+  local label="$1"
+  local binary_name="$2"
+  local var_name="$3"
+  local current_path="${!var_name}"
+  local issue=""
+  local detected_path=""
+  local next_path=""
+
+  while true; do
+    current_path="${!var_name}"
+    issue="$(binary_issue_for_user "$current_path" "$RUNTIME_USER")"
+    if [ -z "$issue" ]; then
+      return
+    fi
+    if ! is_interactive_terminal; then
+      return
+    fi
+
+    warn "$label $issue"
+    if [[ "$issue" == *"runtime user"* ]]; then
+      if prompt_yes_no "Switch runtime user to one that can access $label?" "y"; then
+        prompt_runtime_user_and_home
+        continue
+      fi
+    fi
+
+    detected_path="$(detect_binary_for_user "$binary_name" "$RUNTIME_USER" "$RUNTIME_HOME")"
+    next_path="$current_path"
+    if [ -n "$detected_path" ] && [ "$detected_path" != "$current_path" ]; then
+      next_path="$detected_path"
+    fi
+    next_path="$(prompt_with_default "Enter $label binary path for runtime user $RUNTIME_USER" "$next_path")"
+    if [ -n "$next_path" ]; then
+      printf -v "$var_name" '%s' "$next_path"
+    fi
+  done
+}
+
 ensure_runtime_user() {
   if [ "$RUNTIME_USER" = "$APP_USER" ]; then
     if [ -z "$RUNTIME_HOME" ]; then
       RUNTIME_HOME="$(resolve_user_home "$APP_USER")"
     fi
-    return
+  else
+    if ! id "$RUNTIME_USER" >/dev/null 2>&1 || { [ -n "$RUNTIME_HOME" ] && [ ! -d "$RUNTIME_HOME" ]; }; then
+      if is_interactive_terminal; then
+        warn "runtime user/home configuration needs confirmation"
+        prompt_runtime_user_and_home
+      else
+        if ! id "$RUNTIME_USER" >/dev/null 2>&1; then
+          die "RUNTIME_USER $RUNTIME_USER does not exist; create it first or rerun with RUNTIME_USER=$APP_USER"
+        fi
+        die "RUNTIME_HOME for user $RUNTIME_USER is invalid: $RUNTIME_HOME"
+      fi
+    fi
+    if [ -z "$RUNTIME_HOME" ]; then
+      RUNTIME_HOME="$(resolve_user_home "$RUNTIME_USER")"
+    fi
+    if [ -z "$RUNTIME_HOME" ] || [ ! -d "$RUNTIME_HOME" ]; then
+      if is_interactive_terminal; then
+        warn "runtime home is invalid: $RUNTIME_HOME"
+        prompt_runtime_user_and_home
+      else
+        die "RUNTIME_HOME for user $RUNTIME_USER is invalid: $RUNTIME_HOME"
+      fi
+    fi
   fi
-  if ! id "$RUNTIME_USER" >/dev/null 2>&1; then
-    die "RUNTIME_USER $RUNTIME_USER does not exist; create it first or rerun with RUNTIME_USER=$APP_USER"
-  fi
-  if [ -z "$RUNTIME_HOME" ]; then
-    RUNTIME_HOME="$(resolve_user_home "$RUNTIME_USER")"
-  fi
-  if [ -z "$RUNTIME_HOME" ] || [ ! -d "$RUNTIME_HOME" ]; then
-    die "RUNTIME_HOME for user $RUNTIME_USER is invalid: $RUNTIME_HOME"
-  fi
+
+  OPENCLAW_BIN="$(resolve_binary_path "OpenClaw" "openclaw" "$OPENCLAW_BIN" "$RUNTIME_USER" "$RUNTIME_HOME")"
+  NANOBOT_BIN="$(resolve_binary_path "Nanobot" "nanobot" "$NANOBOT_BIN" "$RUNTIME_USER" "$RUNTIME_HOME")"
+  ensure_binary_access "OpenClaw" "openclaw" OPENCLAW_BIN
+  ensure_binary_access "Nanobot" "nanobot" NANOBOT_BIN
 }
 
 warn_if_binary_unusable_by_service_user() {
@@ -424,8 +626,8 @@ After=network.target
 Type=simple
 User=$RUNTIME_USER
 Group=$RUNTIME_GROUP
+EnvironmentFile=$ENV_FILE
 Environment=HOME=$RUNTIME_HOME
-Environment=OPENCLAW_BIN=$OPENCLAW_BIN
 Environment=CLAW_RUNTIME_ROOT=$RUNTIME_STATE_ROOT_DEFAULT
 Environment=OPENCLAW_CONFIG_PATH=$RUNTIME_STATE_ROOT_DEFAULT/openclaw/openclaw.json
 ExecStart=/bin/sh -lc '"\$OPENCLAW_BIN" gateway'
@@ -453,8 +655,8 @@ After=network.target
 Type=simple
 User=$RUNTIME_USER
 Group=$RUNTIME_GROUP
+EnvironmentFile=$ENV_FILE
 Environment=HOME=$RUNTIME_HOME
-Environment=NANOBOT_BIN=$NANOBOT_BIN
 EnvironmentFile=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i/runtime.env
 ExecStart=/bin/sh -lc '"\$NANOBOT_BIN" gateway --config "\$NANOBOT_CONFIG_PATH" --port "\$NANOBOT_PORT"'
 KillMode=control-group

@@ -531,6 +531,7 @@ def restart_workspace_runtime_api(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
     gateway_manager: GatewayManager = Depends(get_gateway_manager),
+    openclaw_manager: OpenClawRuntimeManager = Depends(get_openclaw_manager),
 ) -> RuntimeStatusResponse:
     workspace = load_owned_workspace(workspace_id, current_user, db)
     if workspace.workspace_type == WORKSPACE_TYPE_BASE:

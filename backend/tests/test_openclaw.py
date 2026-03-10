@@ -204,6 +204,38 @@ def test_openclaw_workspace_activation_follows_route_not_shared_service(client: 
     assert stopped_detail.json()["shared_runtime_status"]["state"] == "stopped"
 
 
+def test_openclaw_runtime_restart_endpoint_reloads_route_without_name_error(client: TestClient):
+    login(client, "admin", "admin-password")
+
+    workspace = client.post("/api/workspaces", json={"name": "Restart Route", "workspace_type": "openclaw"}).json()
+    workspace_id = workspace["id"]
+
+    enable_response = client.put(
+        f"/api/workspaces/{workspace_id}/openclaw-channel-config",
+        json={
+            "values": {
+                "enabled": True,
+                "account_id": "restart-route",
+                "app_id": "restart-app",
+                "app_secret": "restart-secret",
+            }
+        },
+    )
+    assert enable_response.status_code == 200, enable_response.text
+
+    start_response = client.post(f"/api/workspaces/{workspace_id}/runtime/start")
+    assert start_response.status_code == 200
+    assert start_response.json()["state"] == "configured"
+
+    restart_response = client.post(f"/api/workspaces/{workspace_id}/runtime/restart")
+    assert restart_response.status_code == 200, restart_response.text
+    assert restart_response.json()["state"] == "configured"
+
+    detail_response = client.get(f"/api/workspaces/{workspace_id}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["workspace"]["activation_state"] == "active"
+
+
 def test_openclaw_setup_config_and_diagnostics(client: TestClient, app_env):
     login(client, "admin", "admin-password")
 

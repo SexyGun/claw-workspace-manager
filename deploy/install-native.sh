@@ -344,8 +344,8 @@ EOF
 }
 
 write_nanobot_unit() {
-  local unit_name="${NANOBOT_UNIT_TEMPLATE/\{workspace_id\}/%i}"
-  local unit_file="$SYSTEMD_DIR/$unit_name"
+  local template_unit_name="${NANOBOT_UNIT_TEMPLATE/\{workspace_id\}/}"
+  local unit_file="$SYSTEMD_DIR/$template_unit_name"
   log "installing Nanobot workspace runtime unit $unit_file"
   cat >"$unit_file" <<EOF
 [Unit]

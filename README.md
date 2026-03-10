@@ -139,6 +139,55 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
 - `NANOBOT_UNIT_TEMPLATE`：Nanobot 模板单元名，默认 `claw-nanobot@{workspace_id}.service`
 - `OPENCLAW_SHARED_UNIT`：OpenClaw 共享单元名，默认 `claw-openclaw.service`
 
+## 服务器常用运维命令
+
+查看管理器与运行时状态：
+
+```bash
+sudo systemctl status claw-manager.service
+sudo systemctl status claw-openclaw.service
+sudo systemctl status "claw-nanobot@<workspace_id>.service"
+```
+
+重启服务：
+
+```bash
+sudo systemctl restart claw-manager.service
+sudo systemctl restart claw-openclaw.service
+sudo systemctl restart "claw-nanobot@<workspace_id>.service"
+```
+
+停止 / 启动基础工作区实例：
+
+```bash
+sudo systemctl stop "claw-nanobot@<workspace_id>.service"
+sudo systemctl start "claw-nanobot@<workspace_id>.service"
+```
+
+跟踪日志：
+
+```bash
+sudo journalctl -u claw-manager.service -f
+sudo journalctl -u claw-openclaw.service -f
+sudo journalctl -u "claw-nanobot@<workspace_id>.service" -f
+```
+
+检查环境文件与运行时配置：
+
+```bash
+sudo cat /etc/claw-workspace-manager.env
+sudo cat /srv/claw/runtime/openclaw/openclaw.json
+sudo cat "/srv/claw/runtime/nanobot/<workspace_id>/config.json"
+sudo cat "/srv/claw/runtime/nanobot/<workspace_id>/runtime.env"
+```
+
+修改了 `systemd` 单元后重新加载：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart claw-manager.service
+```
+
 ## 工作区目录约定
 
 - 默认工作区根目录是 `backend/.data/workspaces`

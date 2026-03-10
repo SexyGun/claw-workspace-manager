@@ -1,7 +1,10 @@
 import type {
+  DiagnosticChecksResponse,
+  DiagnosticLogsResponse,
   OpenClawConfigRead,
   RuntimeStatus,
   Workspace,
+  WorkspaceListItem,
   WorkspaceConfigRead,
   WorkspaceSummary,
   WorkspaceType,
@@ -14,8 +17,8 @@ export async function listWorkspaceTypes(): Promise<WorkspaceType[]> {
   return response.data
 }
 
-export async function listWorkspaces(): Promise<Workspace[]> {
-  const response = await api.get<Workspace[]>('/workspaces')
+export async function listWorkspaces(): Promise<WorkspaceListItem[]> {
+  const response = await api.get<WorkspaceListItem[]>('/workspaces')
   return response.data
 }
 
@@ -32,6 +35,10 @@ export async function fetchWorkspaceSummary(workspaceId: number): Promise<Worksp
 export async function updateWorkspaceName(workspaceId: number, name: string): Promise<Workspace> {
   const response = await api.patch<Workspace>(`/workspaces/${workspaceId}`, { name })
   return response.data
+}
+
+export async function deleteWorkspace(workspaceId: number): Promise<void> {
+  await api.delete(`/workspaces/${workspaceId}`)
 }
 
 export async function saveNanobotConfig(workspaceId: number, values: Record<string, unknown>): Promise<WorkspaceConfigRead> {
@@ -89,6 +96,22 @@ export async function saveOpenClawChannelConfig(
   return response.data
 }
 
+export async function saveWorkspaceSetupConfig(
+  workspaceId: number,
+  payload: {
+    nanobot?: Record<string, unknown>
+    agent?: Record<string, unknown>
+    provider?: Record<string, unknown>
+    openclaw?: Record<string, unknown>
+    openclaw_channel?: Record<string, unknown>
+    openclaw_raw_json5?: string
+    start_after_save?: boolean
+  },
+): Promise<WorkspaceSummary> {
+  const response = await api.put<WorkspaceSummary>(`/workspaces/${workspaceId}/setup-config`, payload)
+  return response.data
+}
+
 export async function fetchOpenClawServiceStatus(): Promise<RuntimeStatus> {
   const response = await api.get<RuntimeStatus>('/runtime/openclaw/service')
   return response.data
@@ -106,5 +129,17 @@ export async function stopOpenClawService(): Promise<RuntimeStatus> {
 
 export async function restartOpenClawService(): Promise<RuntimeStatus> {
   const response = await api.post<RuntimeStatus>('/runtime/openclaw/service/restart')
+  return response.data
+}
+
+export async function fetchDiagnosticChecks(workspaceId: number): Promise<DiagnosticChecksResponse> {
+  const response = await api.post<DiagnosticChecksResponse>(`/workspaces/${workspaceId}/diagnostics/checks`)
+  return response.data
+}
+
+export async function fetchDiagnosticLogs(workspaceId: number, limit = 50): Promise<DiagnosticLogsResponse> {
+  const response = await api.get<DiagnosticLogsResponse>(`/workspaces/${workspaceId}/diagnostics/logs`, {
+    params: { limit },
+  })
   return response.data
 }

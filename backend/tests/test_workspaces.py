@@ -66,6 +66,17 @@ def test_workspace_creation_renders_configs(client: TestClient, app_env):
     listed = {item["id"]: item for item in list_response.json()}
     assert listed[workspace["id"]]["listen_port"] == 18080
     assert listed[second_response.json()["id"]]["listen_port"] == 18081
+    assert listed[workspace["id"]]["dashboard_state"] == "needs_setup"
+    assert listed[workspace["id"]]["channel_summary"] == "未配置"
+    assert listed[workspace["id"]]["model_summary"] == "anthropic/claude-sonnet-4-5"
+    assert listed[workspace["id"]]["completion_percent"] == 80
+
+    assert detail["overview"]["dashboard_state"] == "needs_setup"
+    assert detail["overview"]["entry_label"] == "网关端口"
+    assert detail["health"]["service_state"] == "stopped"
+    assert detail["health"]["config_state"] == "incomplete"
+    assert "绑定渠道" in detail["recommended_actions"]
+    assert detail["setup_progress"]["completion_percent"] == 80
 
     workspace_types_response = client.get("/api/workspace-types")
     assert workspace_types_response.status_code == 200
@@ -161,6 +172,73 @@ def test_saving_nanobot_config_marks_running_workspace_for_restart(client: TestC
     restart_response = client.post(f"/api/workspaces/{workspace_id}/runtime/restart")
     assert restart_response.status_code == 200
     assert restart_response.json()["needs_restart"] is False
+
+
+def test_workspace_setup_config_saves_all_sections_and_can_start(client: TestClient, app_env):
+    login(client, "admin", "admin-password")
+    workspace = client.post("/api/workspaces", json={"name": "Setup Flow"}).json()
+    workspace_id = workspace["id"]
+
+    setup_response = client.put(
+        f"/api/workspaces/{workspace_id}/setup-config",
+        json={
+            "nanobot": {
+                "feishu": {
+                    "enabled": True,
+                    "app_id": "setup-app",
+                    "app_secret": "setup-secret",
+                }
+            },
+            "agent": {
+                "model": "openrouter/openai/gpt-4.1-mini",
+                "provider": "openrouter",
+            },
+            "provider": {
+                "openrouter": {
+                    "api_key": "sk-setup",
+                    "api_base": "https://openrouter.ai/api/v1",
+                }
+            },
+            "start_after_save": True,
+        },
+    )
+    assert setup_response.status_code == 200, setup_response.text
+    summary = setup_response.json()
+    assert summary["workspace"]["activation_state"] == "active"
+    assert summary["runtime_status"]["state"] == "running"
+    assert summary["setup_progress"]["completion_percent"] == 100
+    assert summary["overview"]["dashboard_state"] == "running"
+    assert summary["health"]["config_state"] == "complete"
+
+    runtime_config_path = Path(app_env["runtime_root"]) / "nanobot" / str(workspace_id) / "config.json"
+    runtime_payload = json.loads(runtime_config_path.read_text(encoding="utf-8"))
+    assert runtime_payload["agents"]["defaults"]["model"] == "openrouter/openai/gpt-4.1-mini"
+    assert runtime_payload["providers"]["openrouter"]["api_key"] == "sk-setup"
+    assert runtime_payload["channels"]["feishu"]["app_id"] == "setup-app"
+
+
+def test_workspace_diagnostics_and_delete_api(client: TestClient, app_env):
+    login(client, "admin", "admin-password")
+    workspace = client.post("/api/workspaces", json={"name": "Diagnostics Space"}).json()
+    workspace_id = workspace["id"]
+
+    checks_response = client.post(f"/api/workspaces/{workspace_id}/diagnostics/checks")
+    assert checks_response.status_code == 200
+    checks = checks_response.json()["checks"]
+    assert any(item["code"] == "channel_ready" for item in checks)
+
+    logs_response = client.get(f"/api/workspaces/{workspace_id}/diagnostics/logs")
+    assert logs_response.status_code == 200
+    assert logs_response.json()["entries"]
+
+    delete_response = client.delete(f"/api/workspaces/{workspace_id}")
+    assert delete_response.status_code == 200
+
+    list_response = client.get("/api/workspaces")
+    assert list_response.status_code == 200
+    assert all(item["id"] != workspace_id for item in list_response.json())
+    local_root = Path(app_env["workspaces_local"])
+    assert not (local_root / "1" / "diagnostics-space").exists()
 
 
 def test_saving_provider_config_updates_runtime_config_and_masks_api_key(client: TestClient, app_env):

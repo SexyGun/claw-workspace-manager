@@ -15,15 +15,24 @@ from app.constants import (
 from app.schemas import (
     OpenClawConfigRead,
     OpenClawRouteRead,
+    WorkspaceDiagnosticsSummaryRead,
+    WorkspaceHealthRead,
     RuntimeStatusResponse,
     WorkspaceConfigRead,
+    WorkspaceListItemRead,
+    WorkspaceOverviewRead,
     WorkspaceRead,
+    WorkspaceSetupProgressRead,
     WorkspaceSummary,
 )
 from app.services import config_renderer, workspace as workspace_service
 from app.services.gateway import GatewayManager
 from app.services.openclaw_runtime import OpenClawRuntimeManager
 from app.services.runtime_control import RuntimeStatus
+from app.services.workspace_dashboard import (
+    compute_workspace_list_item,
+    compute_workspace_summary_metadata,
+)
 
 
 def serialize_runtime_status(runtime: RuntimeStatus) -> RuntimeStatusResponse:
@@ -79,6 +88,28 @@ def serialize_workspace(workspace: models.Workspace) -> WorkspaceRead:
             "activation_state": workspace_activation_state(workspace),
             "listen_port": workspace.runtime.listen_port if workspace.runtime else None,
             "created_at": workspace.created_at,
+        }
+    )
+
+
+def serialize_workspace_list_item(
+    workspace: models.Workspace,
+    settings: Settings,
+    *,
+    shared_runtime: RuntimeStatus | models.SharedRuntime | None = None,
+) -> WorkspaceListItemRead:
+    activation_state = workspace_activation_state(workspace)
+    dashboard = compute_workspace_list_item(
+        workspace,
+        settings,
+        activation_state,
+        runtime=workspace.runtime,
+        shared_runtime=shared_runtime,
+    )
+    return WorkspaceListItemRead.model_validate(
+        {
+            **serialize_workspace(workspace).model_dump(),
+            **dashboard,
         }
     )
 
@@ -178,15 +209,31 @@ def build_workspace_summary(
     openclaw_manager: OpenClawRuntimeManager,
 ) -> WorkspaceSummary:
     summary = WorkspaceSummary(workspace=serialize_workspace(workspace))
+    runtime_status: RuntimeStatus | None = None
+    shared_runtime_status: RuntimeStatus | None = None
     if workspace.workspace_type == WORKSPACE_TYPE_BASE:
         summary.nanobot_config = serialize_nanobot_config(workspace, settings)
         summary.nanobot_agent_config = serialize_nanobot_agent_config(workspace, settings)
         summary.nanobot_provider_config = serialize_nanobot_provider_config(workspace, settings)
-        summary.runtime_status = serialize_runtime_status(gateway_manager.status(db, workspace))
+        runtime_status = gateway_manager.status(db, workspace)
+        summary.runtime_status = serialize_runtime_status(runtime_status)
     elif workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW:
         summary.openclaw_config = serialize_openclaw_config(workspace, settings)
         summary.openclaw_channel_config = serialize_openclaw_channel_config(workspace, settings)
         summary.openclaw_route = serialize_openclaw_route(workspace)
         summary.runtime_status = serialize_openclaw_route_runtime(workspace)
-        summary.shared_runtime_status = serialize_runtime_status(openclaw_manager.service_status(db))
+        shared_runtime_status = openclaw_manager.service_status(db)
+        summary.shared_runtime_status = serialize_runtime_status(shared_runtime_status)
+    metadata = compute_workspace_summary_metadata(
+        workspace,
+        settings,
+        summary.workspace.activation_state,
+        runtime=runtime_status or workspace.runtime,
+        shared_runtime=shared_runtime_status,
+    )
+    summary.overview = WorkspaceOverviewRead.model_validate(metadata["overview"])
+    summary.health = WorkspaceHealthRead.model_validate(metadata["health"])
+    summary.setup_progress = WorkspaceSetupProgressRead.model_validate(metadata["setup_progress"])
+    summary.recommended_actions = metadata["recommended_actions"]
+    summary.diagnostics_summary = WorkspaceDiagnosticsSummaryRead.model_validate(metadata["diagnostics_summary"])
     return summary

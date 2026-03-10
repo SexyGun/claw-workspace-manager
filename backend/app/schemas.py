@@ -84,8 +84,26 @@ class WorkspaceRead(BaseModel):
     created_at: datetime
 
 
+class WorkspaceListItemRead(WorkspaceRead):
+    dashboard_state: Literal["running", "stopped", "needs_setup", "error"]
+    channel_summary: str
+    model_summary: str
+    completion_percent: int = 0
+    last_activity_at: Optional[datetime] = None
+
+
 class WorkspaceConfigPayload(BaseModel):
     values: dict[str, Any]
+
+
+class WorkspaceSetupConfigPayload(BaseModel):
+    nanobot: dict[str, Any] = Field(default_factory=dict)
+    agent: dict[str, Any] = Field(default_factory=dict)
+    provider: dict[str, Any] = Field(default_factory=dict)
+    openclaw: dict[str, Any] = Field(default_factory=dict)
+    openclaw_channel: dict[str, Any] = Field(default_factory=dict)
+    openclaw_raw_json5: Optional[str] = None
+    start_after_save: bool = False
 
 
 class WorkspaceConfigRead(BaseModel):
@@ -139,6 +157,62 @@ class OpenClawRouteRead(BaseModel):
     enabled: bool
 
 
+class WorkspaceOverviewRead(BaseModel):
+    dashboard_state: Literal["running", "stopped", "needs_setup", "error"]
+    channel_summary: str
+    model_summary: str
+    entry_label: Optional[str] = None
+    entry_value: Optional[str] = None
+    last_activity_at: Optional[datetime] = None
+
+
+class WorkspaceHealthRead(BaseModel):
+    service_state: str
+    route_state: str
+    model_state: str
+    config_state: str
+    last_error: Optional[str] = None
+    started_at: Optional[datetime] = None
+    checked_at: datetime
+
+
+class WorkspaceSetupProgressRead(BaseModel):
+    completion_percent: int = 0
+    completed_steps: list[str] = Field(default_factory=list)
+    missing_items: list[str] = Field(default_factory=list)
+
+
+class WorkspaceDiagnosticsSummaryRead(BaseModel):
+    latest_error: Optional[str] = None
+    has_logs: bool = True
+    available_checks: list[str] = Field(default_factory=list)
+
+
+class DiagnosticCheckRead(BaseModel):
+    code: str
+    label: str
+    status: Literal["ok", "warn", "error"]
+    message: str
+    suggested_action: Optional[str] = None
+
+
+class WorkspaceDiagnosticChecksRead(BaseModel):
+    checked_at: datetime
+    checks: list[DiagnosticCheckRead] = Field(default_factory=list)
+
+
+class DiagnosticLogEntryRead(BaseModel):
+    timestamp: Optional[datetime] = None
+    level: Literal["info", "warning", "error"] = "info"
+    message: str
+
+
+class WorkspaceDiagnosticLogsRead(BaseModel):
+    source: str
+    unit_name: Optional[str] = None
+    entries: list[DiagnosticLogEntryRead] = Field(default_factory=list)
+
+
 class WorkspaceSummary(BaseModel):
     workspace: WorkspaceRead
     nanobot_config: Optional[WorkspaceConfigRead] = None
@@ -149,3 +223,8 @@ class WorkspaceSummary(BaseModel):
     openclaw_channel_config: Optional[WorkspaceConfigRead] = None
     openclaw_route: Optional[OpenClawRouteRead] = None
     shared_runtime_status: Optional[RuntimeStatusResponse] = None
+    overview: Optional[WorkspaceOverviewRead] = None
+    health: Optional[WorkspaceHealthRead] = None
+    setup_progress: Optional[WorkspaceSetupProgressRead] = None
+    recommended_actions: list[str] = Field(default_factory=list)
+    diagnostics_summary: Optional[WorkspaceDiagnosticsSummaryRead] = None

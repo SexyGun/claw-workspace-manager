@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -15,9 +17,11 @@ from app.api.workspace_serializers import (
     serialize_openclaw_route_runtime,
     serialize_runtime_status,
     serialize_workspace,
+    serialize_workspace_list_item,
+    workspace_activation_state,
 )
 from app.config import Settings
-from app.constants import WORKSPACE_TYPE_BASE, WORKSPACE_TYPE_OPENCLAW
+from app.constants import SHARED_RUNTIME_KEY_OPENCLAW, WORKSPACE_TYPE_BASE, WORKSPACE_TYPE_OPENCLAW
 from app.db import get_db
 from app.dependencies import (
     get_admin_user,
@@ -28,14 +32,20 @@ from app.dependencies import (
     get_workspace_for_user,
 )
 from app.schemas import (
+    DiagnosticLogEntryRead,
+    MessageResponse,
     OpenClawChannelConfigPayload,
     OpenClawConfigPayload,
     OpenClawConfigRead,
     RuntimeStatusResponse,
+    WorkspaceDiagnosticChecksRead,
+    WorkspaceDiagnosticLogsRead,
     WorkspaceConfigPayload,
     WorkspaceConfigRead,
     WorkspaceCreate,
+    WorkspaceListItemRead,
     WorkspaceRead,
+    WorkspaceSetupConfigPayload,
     WorkspaceSummary,
     WorkspaceTypeRead,
     WorkspaceUpdate,
@@ -43,6 +53,7 @@ from app.schemas import (
 from app.services import config_renderer, workspace as workspace_service
 from app.services.gateway import GatewayManager
 from app.services.openclaw_runtime import OpenClawRuntimeManager
+from app.services.workspace_dashboard import build_diagnostic_checks, build_diagnostic_logs
 from app.services.workspace_artifacts import (
     ensure_workspace_type,
     load_workspace,
@@ -69,11 +80,12 @@ def list_workspace_types(settings: Settings = Depends(get_app_settings)) -> list
     return [WorkspaceTypeRead(key=profile.key, label=profile.label, description=profile.description) for profile in profiles]
 
 
-@router.get("", response_model=list[WorkspaceRead])
+@router.get("", response_model=list[WorkspaceListItemRead])
 def list_workspaces(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[WorkspaceRead]:
+    settings: Settings = Depends(get_app_settings),
+) -> list[WorkspaceListItemRead]:
     query = (
         select(models.Workspace)
         .options(selectinload(models.Workspace.runtime), selectinload(models.Workspace.config))
@@ -82,7 +94,11 @@ def list_workspaces(
     if current_user.role != "admin":
         query = query.where(models.Workspace.owner_user_id == current_user.id)
     workspaces = db.scalars(query).all()
-    return [serialize_workspace(workspace) for workspace in workspaces]
+    shared_runtime = db.get(models.SharedRuntime, SHARED_RUNTIME_KEY_OPENCLAW)
+    return [
+        serialize_workspace_list_item(workspace, settings, shared_runtime=shared_runtime)
+        for workspace in workspaces
+    ]
 
 
 @router.post("", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
@@ -146,6 +162,26 @@ def update_workspace_api(
     return serialize_workspace(workspace)
 
 
+@router.delete("/{workspace_id}", response_model=MessageResponse)
+def delete_workspace_api(
+    workspace_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+    gateway_manager: GatewayManager = Depends(get_gateway_manager),
+    openclaw_manager: OpenClawRuntimeManager = Depends(get_openclaw_manager),
+) -> MessageResponse:
+    workspace = load_owned_workspace(workspace_id, current_user, db)
+    workspace_type = workspace.workspace_type
+    if workspace_type == WORKSPACE_TYPE_BASE and workspace.runtime is not None:
+        gateway_manager.stop(db, workspace)
+    workspace_service.delete_workspace(db, settings, workspace)
+    if workspace_type == WORKSPACE_TYPE_OPENCLAW:
+        render_openclaw_service_artifacts(db, settings)
+        openclaw_manager.reload_if_running(db)
+    return MessageResponse(message="Workspace deleted")
+
+
 @router.get("/{workspace_id}/nanobot-config", response_model=WorkspaceConfigRead)
 def get_nanobot_config_api(
     workspace_id: int,
@@ -156,6 +192,86 @@ def get_nanobot_config_api(
     workspace = load_owned_workspace(workspace_id, current_user, db)
     ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "nanobot")
     return serialize_nanobot_config(workspace, settings)
+
+
+@router.put("/{workspace_id}/setup-config", response_model=WorkspaceSummary)
+def put_workspace_setup_config_api(
+    workspace_id: int,
+    payload: WorkspaceSetupConfigPayload,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+    gateway_manager: GatewayManager = Depends(get_gateway_manager),
+    openclaw_manager: OpenClawRuntimeManager = Depends(get_openclaw_manager),
+) -> WorkspaceSummary:
+    workspace = load_owned_workspace(workspace_id, current_user, db)
+    if workspace.workspace_type == WORKSPACE_TYPE_BASE:
+        local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
+        source_config_path = local_path / ".nanobot" / "config.json"
+        updated_config = config_renderer.load_nanobot_instance_config(source_config_path)
+        try:
+            if payload.nanobot:
+                merged_channel = config_renderer.merge_channel_config(workspace.config.channel_config_json, payload.nanobot)
+                config_renderer.validate_channel_config(merged_channel)
+                workspace.config.channel_config_json = merged_channel
+            if payload.agent:
+                updated_config = config_renderer.merge_agent_defaults_config(updated_config, payload.agent)
+                config_renderer.validate_agent_defaults_config(updated_config)
+            if payload.provider:
+                updated_config = config_renderer.merge_provider_config(updated_config, payload.provider)
+                config_renderer.validate_provider_config(updated_config)
+            config_renderer.write_nanobot_config(source_config_path, updated_config)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        mark_workspace_runtime_for_restart(db, workspace)
+        db.add(workspace.config)
+        db.commit()
+        render_workspace_artifacts(db, workspace, settings)
+        workspace = load_workspace(db, workspace.id)
+        assert workspace is not None
+        if payload.start_after_save:
+            gateway_manager.start(db, workspace)
+            workspace = load_workspace(db, workspace.id)
+            assert workspace is not None
+        return build_workspace_summary(db, workspace, settings, gateway_manager, openclaw_manager)
+
+    try:
+        base_config = workspace.config.openclaw_config_json or config_renderer.default_openclaw_config()
+        if payload.openclaw_raw_json5 and payload.openclaw_raw_json5.strip():
+            base_config = config_renderer.restore_masked_openclaw_config(
+                base_config,
+                config_renderer.parse_openclaw_raw_json5(payload.openclaw_raw_json5),
+            )
+        if payload.openclaw:
+            base_config = config_renderer.merge_openclaw_structured_values(base_config, payload.openclaw)
+        merged_openclaw = config_renderer.validate_openclaw_config(base_config)
+        merged_channel = config_renderer.merge_openclaw_channel_config(
+            workspace.config.openclaw_channel_json,
+            payload.openclaw_channel,
+        )
+        merged_channel = config_renderer.validate_openclaw_channel_config(merged_channel)
+        binding_updates: dict[str, object] = {}
+        if not merged_channel["enabled"]:
+            binding_updates["enabled"] = False
+        if payload.start_after_save:
+            binding_updates["enabled"] = True
+        merged_binding = config_renderer.merge_openclaw_binding_config(
+            workspace.config.openclaw_binding_json,
+            binding_updates,
+        )
+        merged_binding = config_renderer.validate_openclaw_binding_config(merged_binding)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    workspace.config.openclaw_config_json = merged_openclaw
+    workspace.config.openclaw_channel_json = merged_channel
+    workspace.config.openclaw_binding_json = merged_binding
+    db.add(workspace.config)
+    db.commit()
+    render_workspace_artifacts(db, workspace, settings)
+    openclaw_manager.reload_if_running(db)
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    return build_workspace_summary(db, workspace, settings, gateway_manager, openclaw_manager)
 
 
 @router.put("/{workspace_id}/nanobot-config", response_model=WorkspaceConfigRead)
@@ -364,13 +480,24 @@ def start_workspace_runtime_api(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
     gateway_manager: GatewayManager = Depends(get_gateway_manager),
+    openclaw_manager: OpenClawRuntimeManager = Depends(get_openclaw_manager),
 ) -> RuntimeStatusResponse:
     workspace = load_owned_workspace(workspace_id, current_user, db)
-    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "runtime")
+    if workspace.workspace_type == WORKSPACE_TYPE_BASE:
+        render_workspace_artifacts(db, workspace, settings)
+        workspace = load_workspace(db, workspace.id)
+        assert workspace is not None
+        return serialize_runtime_status(gateway_manager.start(db, workspace))
+
+    binding = config_renderer.merge_openclaw_binding_config(workspace.config.openclaw_binding_json, {"enabled": True})
+    workspace.config.openclaw_binding_json = config_renderer.validate_openclaw_binding_config(binding)
+    db.add(workspace.config)
+    db.commit()
     render_workspace_artifacts(db, workspace, settings)
+    openclaw_manager.reload_if_running(db)
     workspace = load_workspace(db, workspace.id)
     assert workspace is not None
-    return serialize_runtime_status(gateway_manager.start(db, workspace))
+    return serialize_openclaw_route_runtime(workspace)
 
 
 @router.post("/{workspace_id}/runtime/stop", response_model=RuntimeStatusResponse)
@@ -378,11 +505,23 @@ def stop_workspace_runtime_api(
     workspace_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
     gateway_manager: GatewayManager = Depends(get_gateway_manager),
+    openclaw_manager: OpenClawRuntimeManager = Depends(get_openclaw_manager),
 ) -> RuntimeStatusResponse:
     workspace = load_owned_workspace(workspace_id, current_user, db)
-    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "runtime")
-    return serialize_runtime_status(gateway_manager.stop(db, workspace))
+    if workspace.workspace_type == WORKSPACE_TYPE_BASE:
+        return serialize_runtime_status(gateway_manager.stop(db, workspace))
+
+    binding = config_renderer.merge_openclaw_binding_config(workspace.config.openclaw_binding_json, {"enabled": False})
+    workspace.config.openclaw_binding_json = config_renderer.validate_openclaw_binding_config(binding)
+    db.add(workspace.config)
+    db.commit()
+    render_workspace_artifacts(db, workspace, settings)
+    openclaw_manager.reload_if_running(db)
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    return serialize_openclaw_route_runtime(workspace)
 
 
 @router.post("/{workspace_id}/runtime/restart", response_model=RuntimeStatusResponse)
@@ -394,11 +533,17 @@ def restart_workspace_runtime_api(
     gateway_manager: GatewayManager = Depends(get_gateway_manager),
 ) -> RuntimeStatusResponse:
     workspace = load_owned_workspace(workspace_id, current_user, db)
-    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "runtime")
+    if workspace.workspace_type == WORKSPACE_TYPE_BASE:
+        render_workspace_artifacts(db, workspace, settings)
+        workspace = load_workspace(db, workspace.id)
+        assert workspace is not None
+        return serialize_runtime_status(gateway_manager.restart(db, workspace))
+
     render_workspace_artifacts(db, workspace, settings)
+    openclaw_manager.reload_if_running(db)
     workspace = load_workspace(db, workspace.id)
     assert workspace is not None
-    return serialize_runtime_status(gateway_manager.restart(db, workspace))
+    return serialize_openclaw_route_runtime(workspace)
 
 
 @router.put("/{workspace_id}/openclaw-channel-config", response_model=WorkspaceConfigRead)
@@ -418,10 +563,8 @@ def put_openclaw_channel_config_api(
             payload.values,
         )
         merged_channel = config_renderer.validate_openclaw_channel_config(merged_channel)
-        merged_binding = config_renderer.merge_openclaw_binding_config(
-            workspace.config.openclaw_binding_json,
-            {"enabled": merged_channel["enabled"]},
-        )
+        binding_updates = {"enabled": False} if not merged_channel["enabled"] else {}
+        merged_binding = config_renderer.merge_openclaw_binding_config(workspace.config.openclaw_binding_json, binding_updates)
         merged_binding = config_renderer.validate_openclaw_binding_config(merged_binding)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -436,14 +579,72 @@ def put_openclaw_channel_config_api(
     return serialize_openclaw_channel_config(workspace, settings)
 
 
-@router.get("/admin/all", response_model=list[WorkspaceRead], include_in_schema=False)
+@router.post("/{workspace_id}/diagnostics/checks", response_model=WorkspaceDiagnosticChecksRead)
+def workspace_diagnostic_checks_api(
+    workspace_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+    gateway_manager: GatewayManager = Depends(get_gateway_manager),
+    openclaw_manager: OpenClawRuntimeManager = Depends(get_openclaw_manager),
+) -> WorkspaceDiagnosticChecksRead:
+    workspace = load_owned_workspace(workspace_id, current_user, db)
+    runtime_status = gateway_manager.status(db, workspace) if workspace.workspace_type == WORKSPACE_TYPE_BASE else None
+    shared_runtime_status = openclaw_manager.service_status(db) if workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW else None
+    checks = build_diagnostic_checks(
+        workspace,
+        settings,
+        workspace_activation_state(workspace),
+        runtime=runtime_status or workspace.runtime,
+        shared_runtime=shared_runtime_status,
+    )
+    return WorkspaceDiagnosticChecksRead(
+        checked_at=datetime.now(timezone.utc),
+        checks=checks,
+    )
+
+
+@router.get("/{workspace_id}/diagnostics/logs", response_model=WorkspaceDiagnosticLogsRead)
+def workspace_diagnostic_logs_api(
+    workspace_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+    gateway_manager: GatewayManager = Depends(get_gateway_manager),
+    openclaw_manager: OpenClawRuntimeManager = Depends(get_openclaw_manager),
+    limit: int = 50,
+) -> WorkspaceDiagnosticLogsRead:
+    workspace = load_owned_workspace(workspace_id, current_user, db)
+    runtime_status = gateway_manager.status(db, workspace) if workspace.workspace_type == WORKSPACE_TYPE_BASE else None
+    shared_runtime_status = openclaw_manager.service_status(db) if workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW else None
+    logs = build_diagnostic_logs(
+        workspace,
+        settings,
+        workspace_activation_state(workspace),
+        runtime=runtime_status or workspace.runtime,
+        shared_runtime=shared_runtime_status,
+        limit=max(1, min(limit, 200)),
+    )
+    return WorkspaceDiagnosticLogsRead(
+        source=logs["source"],
+        unit_name=logs["unit_name"],
+        entries=[DiagnosticLogEntryRead.model_validate(entry) for entry in logs["entries"]],
+    )
+
+
+@router.get("/admin/all", response_model=list[WorkspaceListItemRead], include_in_schema=False)
 def list_all_workspaces_admin(
     _: models.User = Depends(get_admin_user),
     db: Session = Depends(get_db),
-) -> list[WorkspaceRead]:
+    settings: Settings = Depends(get_app_settings),
+) -> list[WorkspaceListItemRead]:
     workspaces = db.scalars(
         select(models.Workspace)
         .options(selectinload(models.Workspace.runtime), selectinload(models.Workspace.config))
         .order_by(models.Workspace.created_at.desc())
     ).all()
-    return [serialize_workspace(workspace) for workspace in workspaces]
+    shared_runtime = db.get(models.SharedRuntime, SHARED_RUNTIME_KEY_OPENCLAW)
+    return [
+        serialize_workspace_list_item(workspace, settings, shared_runtime=shared_runtime)
+        for workspace in workspaces
+    ]

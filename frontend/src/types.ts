@@ -26,6 +26,14 @@ export interface Workspace {
   created_at: string
 }
 
+export interface WorkspaceListItem extends Workspace {
+  dashboard_state: 'running' | 'stopped' | 'needs_setup' | 'error'
+  channel_summary: string
+  model_summary: string
+  completion_percent: number
+  last_activity_at: string | null
+}
+
 export interface ConfigField {
   key: string
   label: string
@@ -88,6 +96,62 @@ export interface OpenClawRoute {
   enabled: boolean
 }
 
+export interface WorkspaceOverview {
+  dashboard_state: 'running' | 'stopped' | 'needs_setup' | 'error'
+  channel_summary: string
+  model_summary: string
+  entry_label: string | null
+  entry_value: string | null
+  last_activity_at: string | null
+}
+
+export interface WorkspaceHealth {
+  service_state: string
+  route_state: string
+  model_state: string
+  config_state: string
+  last_error: string | null
+  started_at: string | null
+  checked_at: string
+}
+
+export interface WorkspaceSetupProgress {
+  completion_percent: number
+  completed_steps: string[]
+  missing_items: string[]
+}
+
+export interface WorkspaceDiagnosticsSummary {
+  latest_error: string | null
+  has_logs: boolean
+  available_checks: string[]
+}
+
+export interface DiagnosticCheck {
+  code: string
+  label: string
+  status: 'ok' | 'warn' | 'error'
+  message: string
+  suggested_action: string | null
+}
+
+export interface DiagnosticChecksResponse {
+  checked_at: string
+  checks: DiagnosticCheck[]
+}
+
+export interface DiagnosticLogEntry {
+  timestamp: string | null
+  level: 'info' | 'warning' | 'error'
+  message: string
+}
+
+export interface DiagnosticLogsResponse {
+  source: string
+  unit_name: string | null
+  entries: DiagnosticLogEntry[]
+}
+
 export interface WorkspaceSummary {
   workspace: Workspace
   nanobot_config?: WorkspaceConfigRead<ChannelSchema> | null
@@ -98,4 +162,9 @@ export interface WorkspaceSummary {
   openclaw_channel_config?: WorkspaceConfigRead<FlatSchema> | null
   openclaw_route?: OpenClawRoute | null
   shared_runtime_status?: RuntimeStatus | null
+  overview?: WorkspaceOverview | null
+  health?: WorkspaceHealth | null
+  setup_progress?: WorkspaceSetupProgress | null
+  recommended_actions: string[]
+  diagnostics_summary?: WorkspaceDiagnosticsSummary | null
 }

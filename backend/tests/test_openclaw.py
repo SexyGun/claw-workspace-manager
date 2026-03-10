@@ -31,6 +31,14 @@ def test_openclaw_workspace_creation_and_aggregate_rendering(client: TestClient,
     )
     assert channel_response.status_code == 200, channel_response.text
 
+    inactive_detail = client.get(f"/api/workspaces/{workspace['id']}")
+    assert inactive_detail.status_code == 200
+    assert inactive_detail.json()["workspace"]["activation_state"] == "inactive"
+
+    start_response = client.post(f"/api/workspaces/{workspace['id']}/runtime/start")
+    assert start_response.status_code == 200
+    assert start_response.json()["state"] == "configured"
+
     detail_response = client.get(f"/api/workspaces/{workspace['id']}")
     assert detail_response.status_code == 200
     detail = detail_response.json()
@@ -39,11 +47,14 @@ def test_openclaw_workspace_creation_and_aggregate_rendering(client: TestClient,
     assert detail["workspace"]["activation_state"] == "active"
     assert detail["openclaw_route"]["enabled"] is True
     assert detail["shared_runtime_status"]["scope"] == "shared"
+    assert detail["overview"]["dashboard_state"] == "stopped"
+    assert detail["health"]["route_state"] == "connected"
 
     list_response = client.get("/api/workspaces")
     assert list_response.status_code == 200
     listed = {item["id"]: item for item in list_response.json()}
     assert listed[workspace["id"]]["activation_state"] == "active"
+    assert listed[workspace["id"]]["dashboard_state"] == "stopped"
 
     admin_list_response = client.get("/api/workspaces/admin/all")
     assert admin_list_response.status_code == 200
@@ -152,6 +163,13 @@ def test_openclaw_workspace_activation_follows_route_not_shared_service(client: 
     )
     assert enable_response.status_code == 200, enable_response.text
 
+    still_inactive = client.get(f"/api/workspaces/{workspace_id}")
+    assert still_inactive.status_code == 200
+    assert still_inactive.json()["workspace"]["activation_state"] == "inactive"
+
+    route_start = client.post(f"/api/workspaces/{workspace_id}/runtime/start")
+    assert route_start.status_code == 200
+
     active_detail = client.get(f"/api/workspaces/{workspace_id}")
     assert active_detail.status_code == 200
     assert active_detail.json()["workspace"]["activation_state"] == "active"
@@ -174,6 +192,55 @@ def test_openclaw_workspace_activation_follows_route_not_shared_service(client: 
     assert stopped_detail.status_code == 200
     assert stopped_detail.json()["workspace"]["activation_state"] == "active"
     assert stopped_detail.json()["shared_runtime_status"]["state"] == "stopped"
+
+
+def test_openclaw_setup_config_and_diagnostics(client: TestClient, app_env):
+    login(client, "admin", "admin-password")
+
+    workspace = client.post("/api/workspaces", json={"name": "Guided Claw", "workspace_type": "openclaw"}).json()
+    workspace_id = workspace["id"]
+
+    setup_response = client.put(
+        f"/api/workspaces/{workspace_id}/setup-config",
+        json={
+            "openclaw": {
+                "primary_model": "moonshot/kimi-k2.5",
+                "provider_id": "moonshot",
+                "provider_base_url": "https://api.moonshot.ai/v1",
+                "provider_api_key": "${MOONSHOT_API_KEY}",
+                "provider_api": "openai-completions",
+                "provider_auth": "api-key",
+            },
+            "openclaw_channel": {
+                "enabled": True,
+                "account_id": "guided-claw",
+                "app_id": "guided-app",
+                "app_secret": "guided-secret",
+            },
+            "start_after_save": True,
+        },
+    )
+    assert setup_response.status_code == 200, setup_response.text
+    summary = setup_response.json()
+    assert summary["workspace"]["activation_state"] == "active"
+    assert summary["setup_progress"]["completion_percent"] == 100
+    assert summary["overview"]["channel_summary"] == "Feishu · guided-claw"
+    assert summary["health"]["service_state"] == "stopped"
+
+    checks_response = client.post(f"/api/workspaces/{workspace_id}/diagnostics/checks")
+    assert checks_response.status_code == 200
+    checks = {item["code"]: item for item in checks_response.json()["checks"]}
+    assert checks["route_enabled"]["status"] == "ok"
+    assert checks["shared_service"]["status"] == "warn"
+
+    logs_response = client.get(f"/api/workspaces/{workspace_id}/diagnostics/logs")
+    assert logs_response.status_code == 200
+    assert logs_response.json()["entries"]
+
+    aggregate_path = Path(app_env["runtime_root"]) / "openclaw" / "openclaw.json"
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    assert aggregate["bindings"][0]["agentId"] == f"workspace-{workspace_id}"
+    assert aggregate["bindings"][0]["match"]["accountId"] == "guided-claw"
 
 
 def test_openclaw_shared_service_requires_admin(client: TestClient):

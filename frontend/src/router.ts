@@ -26,6 +26,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/workspaces/:id/setup',
+    name: 'workspace-setup',
+    component: () => import('./views/WorkspaceSetupView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/users',
     name: 'users',
     component: () => import('./views/UsersView.vue'),

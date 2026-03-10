@@ -2,6 +2,9 @@ export { fetchMe, login, logout } from './auth'
 export { api, getErrorMessage } from './client'
 export {
   createWorkspace,
+  deleteWorkspace,
+  fetchDiagnosticChecks,
+  fetchDiagnosticLogs,
   fetchOpenClawServiceStatus,
   fetchWorkspaceRuntime,
   fetchWorkspaceSummary,
@@ -14,6 +17,7 @@ export {
   saveOpenClawChannelConfig,
   saveOpenClawConfig,
   saveProviderConfig,
+  saveWorkspaceSetupConfig,
   startOpenClawService,
   startWorkspaceRuntime,
   stopOpenClawService,

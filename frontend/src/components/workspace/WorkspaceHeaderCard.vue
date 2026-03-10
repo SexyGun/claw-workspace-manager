@@ -9,15 +9,16 @@
           <n-tag :type="summary.workspace.workspace_type === 'openclaw' ? 'info' : 'success'">
             {{ summary.workspace.workspace_type }}
           </n-tag>
-          <template v-if="isBaseWorkspace">
+          <template v-if="summary.workspace.activation_state">
             <n-tag :type="activationTagType">
-              {{ summary.workspace.activation_state ?? 'inactive' }}
+              {{ summary.workspace.activation_state }}
             </n-tag>
+          </template>
+          <template v-if="isBaseWorkspace">
             <n-tag v-if="summary.workspace.listen_port" type="info">
               port {{ summary.workspace.listen_port }}
             </n-tag>
           </template>
-          <n-tag v-else :type="runtimeTagType">{{ runtimeStatus?.state ?? 'unknown' }}</n-tag>
         </n-space>
         <div class="path-text">
           <n-text depth="3">{{ summary.workspace.host_path }}</n-text>
@@ -45,7 +46,7 @@
 <script setup lang="ts">
 import { NButton, NCard, NH2, NInput, NSpace, NTag, NText } from 'naive-ui'
 
-import type { RuntimeStatus, WorkspaceSummary } from '../../types'
+import type { WorkspaceSummary } from '../../types'
 import type { RuntimeAction } from '../../composables/useWorkspaceDetail'
 
 type TagType = 'default' | 'error' | 'info' | 'primary' | 'success' | 'warning'
@@ -53,8 +54,6 @@ type TagType = 'default' | 'error' | 'info' | 'primary' | 'success' | 'warning'
 defineProps<{
   activationTagType: TagType
   isBaseWorkspace: boolean
-  runtimeStatus: RuntimeStatus | null
-  runtimeTagType: TagType
   summary: WorkspaceSummary
   workspaceNameInput: string
 }>()

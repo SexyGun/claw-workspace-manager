@@ -43,14 +43,26 @@ def serialize_runtime_status(runtime: RuntimeStatus) -> RuntimeStatusResponse:
     )
 
 
-def workspace_activation_state(runtime: models.WorkspaceRuntime | None) -> str | None:
-    if runtime is None:
-        return None
-    if runtime.state == "error":
-        return "error"
-    if runtime.state in {"running", "starting", "stopping"}:
-        return "active"
-    return "inactive"
+def workspace_activation_state(workspace: models.Workspace) -> str | None:
+    if workspace.workspace_type == WORKSPACE_TYPE_BASE:
+        runtime = workspace.runtime
+        if runtime is None:
+            return None
+        if runtime.state == "error":
+            return "error"
+        if runtime.state in {"running", "starting", "stopping"}:
+            return "active"
+        return "inactive"
+
+    if workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW:
+        route = config_renderer.build_openclaw_route(
+            workspace.config.openclaw_channel_json or config_renderer.default_openclaw_channel_config(),
+            workspace.config.openclaw_binding_json or config_renderer.default_openclaw_binding_config(),
+            workspace.id,
+        )
+        return "active" if route["enabled"] else "inactive"
+
+    return None
 
 
 def serialize_workspace(workspace: models.Workspace) -> WorkspaceRead:
@@ -64,7 +76,7 @@ def serialize_workspace(workspace: models.Workspace) -> WorkspaceRead:
             "host_path": workspace.host_path,
             "template_version": workspace.template_version,
             "status": workspace.status,
-            "activation_state": workspace_activation_state(workspace.runtime),
+            "activation_state": workspace_activation_state(workspace),
             "listen_port": workspace.runtime.listen_port if workspace.runtime else None,
             "created_at": workspace.created_at,
         }

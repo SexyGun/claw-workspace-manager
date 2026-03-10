@@ -14,6 +14,7 @@ def test_openclaw_workspace_creation_and_aggregate_rendering(client: TestClient,
     create_response = client.post("/api/workspaces", json={"name": "Claw Lab", "workspace_type": "openclaw"})
     assert create_response.status_code == 201, create_response.text
     workspace = create_response.json()
+    assert workspace["activation_state"] == "inactive"
 
     channel_response = client.put(
         f"/api/workspaces/{workspace['id']}/openclaw-channel-config",
@@ -33,8 +34,19 @@ def test_openclaw_workspace_creation_and_aggregate_rendering(client: TestClient,
     detail = detail_response.json()
     assert detail["openclaw_config"] is not None
     assert detail["openclaw_channel_config"] is not None
+    assert detail["workspace"]["activation_state"] == "active"
     assert detail["openclaw_route"]["enabled"] is True
     assert detail["shared_runtime_status"]["scope"] == "shared"
+
+    list_response = client.get("/api/workspaces")
+    assert list_response.status_code == 200
+    listed = {item["id"]: item for item in list_response.json()}
+    assert listed[workspace["id"]]["activation_state"] == "active"
+
+    admin_list_response = client.get("/api/workspaces/admin/all")
+    assert admin_list_response.status_code == 200
+    admin_listed = {item["id"]: item for item in admin_list_response.json()}
+    assert admin_listed[workspace["id"]]["activation_state"] == "active"
 
     local_root = Path(app_env["workspaces_local"])
     runtime_root = Path(app_env["runtime_root"])
@@ -56,6 +68,54 @@ def test_openclaw_workspace_creation_and_aggregate_rendering(client: TestClient,
     assert aggregate["agents"]["list"][0]["workspace"] == str(workspace_dir)
     assert aggregate["channels"]["feishu"]["accounts"][0]["id"] == "feishu-claw-lab"
     assert aggregate["bindings"][0]["agentId"] == f"workspace-{workspace['id']}"
+
+
+def test_openclaw_workspace_activation_follows_route_not_shared_service(client: TestClient):
+    login(client, "admin", "admin-password")
+
+    workspace = client.post("/api/workspaces", json={"name": "Route Only", "workspace_type": "openclaw"}).json()
+    workspace_id = workspace["id"]
+
+    initial_detail = client.get(f"/api/workspaces/{workspace_id}")
+    assert initial_detail.status_code == 200
+    assert initial_detail.json()["workspace"]["activation_state"] == "inactive"
+    assert initial_detail.json()["shared_runtime_status"]["state"] == "stopped"
+
+    enable_response = client.put(
+        f"/api/workspaces/{workspace_id}/openclaw-channel-config",
+        json={
+            "values": {
+                "enabled": True,
+                "account_id": "route-only",
+                "app_id": "route-only-app",
+                "app_secret": "route-only-secret",
+            }
+        },
+    )
+    assert enable_response.status_code == 200, enable_response.text
+
+    active_detail = client.get(f"/api/workspaces/{workspace_id}")
+    assert active_detail.status_code == 200
+    assert active_detail.json()["workspace"]["activation_state"] == "active"
+    assert active_detail.json()["shared_runtime_status"]["state"] == "stopped"
+
+    start_response = client.post("/api/runtime/openclaw/service/start")
+    assert start_response.status_code == 200
+    assert start_response.json()["state"] == "running"
+
+    running_detail = client.get(f"/api/workspaces/{workspace_id}")
+    assert running_detail.status_code == 200
+    assert running_detail.json()["workspace"]["activation_state"] == "active"
+    assert running_detail.json()["shared_runtime_status"]["state"] == "running"
+
+    stop_response = client.post("/api/runtime/openclaw/service/stop")
+    assert stop_response.status_code == 200
+    assert stop_response.json()["state"] == "stopped"
+
+    stopped_detail = client.get(f"/api/workspaces/{workspace_id}")
+    assert stopped_detail.status_code == 200
+    assert stopped_detail.json()["workspace"]["activation_state"] == "active"
+    assert stopped_detail.json()["shared_runtime_status"]["state"] == "stopped"
 
 
 def test_openclaw_shared_service_requires_admin(client: TestClient):

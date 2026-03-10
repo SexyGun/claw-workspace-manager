@@ -19,8 +19,8 @@
               <n-space justify="space-between" align="center">
                 <n-tag type="warning" size="small">{{ workspace.status }}</n-tag>
                 <n-space>
-                  <n-tag v-if="workspace.workspace_type === 'base'" :type="activationTagType(workspace.activation_state)" size="small">
-                    {{ workspace.activation_state ?? 'unknown' }}
+                  <n-tag v-if="workspace.activation_state" :type="activationTagType(workspace.activation_state)" size="small">
+                    {{ workspace.activation_state }}
                   </n-tag>
                   <n-tag :type="workspace.workspace_type === 'openclaw' ? 'info' : 'success'" size="small">
                     {{ workspace.workspace_type }}

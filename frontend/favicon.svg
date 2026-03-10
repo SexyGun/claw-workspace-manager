@@ -1,0 +1,53 @@
+<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="coreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <linearGradient id="orbitGradientNew" x1="0%" y1="50%" x2="100%" y2="50%" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#bfdbfe" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#1d4ed8" stop-opacity="0.8" />
+    </linearGradient>
+
+    <mask id="lightningMask">
+      <rect x="0" y="0" width="48" height="48" fill="white" />
+      <path d="M23 6L27 20H35L19 42L21 24H13L23 6Z" fill="black" />
+    </mask>
+
+    <filter id="orbitGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" std-deviation="1.5" result="blur" />
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.145 0 0 0 0 0.388 0 0 0 0 0.921 0 0 0 0.6 0" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="satGlow" x="-100%" y="-100%" width="300%" height="300%">
+       <feGaussianBlur in="SourceGraphic" std-deviation="1" />
+    </filter>
+  </defs>
+
+  <ellipse 
+    cx="24" cy="24" rx="17" ry="17" 
+    transform="rotate(-10 24 24)"
+    fill="url(#coreGradient)" 
+    mask="url(#lightningMask)"
+  />
+
+  <path 
+    d="M 6,32 C 6,32 12,46 30,42 C 48,38 46,14 40,6"
+    stroke="url(#orbitGradientNew)" 
+    stroke-width="2.5" 
+    stroke-linecap="round"
+    fill="none"
+    filter="url(#orbitGlow)"
+  />
+  
+  <g>
+    <circle cx="43" cy="12" r="3.5" fill="#60a5fa" filter="url(#satGlow)" opacity="0.5"/>
+    <circle cx="43" cy="12" r="2.3" fill="#ffffff" />
+  </g>
+</svg>

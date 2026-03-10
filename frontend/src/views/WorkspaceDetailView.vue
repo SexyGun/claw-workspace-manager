@@ -6,8 +6,6 @@
         :workspace-name-input="detail.workspaceNameInput.value"
         :is-base-workspace="detail.isBaseWorkspace.value"
         :activation-tag-type="detail.activationTagType.value"
-        :runtime-tag-type="detail.runtimeTagType.value"
-        :runtime-status="detail.runtimeStatus.value"
         @refresh="detail.refreshSummary"
         @rename="detail.handleRename"
         @update:workspace-name-input="detail.workspaceNameInput.value = $event"

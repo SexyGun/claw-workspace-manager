@@ -52,27 +52,12 @@ export function useWorkspaceDetail() {
   const openclawChannelValues = reactive<Record<string, unknown>>({})
 
   const isBaseWorkspace = computed(() => summary.value?.workspace.workspace_type === 'base')
-  const runtimeStatus = computed(() => summary.value?.runtime_status ?? null)
   const activationTagType = computed(() => {
     switch (summary.value?.workspace.activation_state) {
       case 'active':
         return 'success'
       case 'error':
         return 'error'
-      default:
-        return 'default'
-    }
-  })
-  const runtimeTagType = computed(() => {
-    switch (runtimeStatus.value?.state) {
-      case 'running':
-      case 'configured':
-        return 'success'
-      case 'error':
-        return 'error'
-      case 'starting':
-      case 'stopping':
-        return 'warning'
       default:
         return 'default'
     }
@@ -285,8 +270,6 @@ export function useWorkspaceDetail() {
     openclawValues,
     providerValues,
     refreshSummary,
-    runtimeStatus,
-    runtimeTagType,
     savingAgent,
     savingNanobot,
     savingOpenClaw,

@@ -74,7 +74,11 @@ def list_workspaces(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[WorkspaceRead]:
-    query = select(models.Workspace).options(selectinload(models.Workspace.runtime)).order_by(models.Workspace.created_at.desc())
+    query = (
+        select(models.Workspace)
+        .options(selectinload(models.Workspace.runtime), selectinload(models.Workspace.config))
+        .order_by(models.Workspace.created_at.desc())
+    )
     if current_user.role != "admin":
         query = query.where(models.Workspace.owner_user_id == current_user.id)
     workspaces = db.scalars(query).all()
@@ -435,6 +439,8 @@ def list_all_workspaces_admin(
     db: Session = Depends(get_db),
 ) -> list[WorkspaceRead]:
     workspaces = db.scalars(
-        select(models.Workspace).options(selectinload(models.Workspace.runtime)).order_by(models.Workspace.created_at.desc())
+        select(models.Workspace)
+        .options(selectinload(models.Workspace.runtime), selectinload(models.Workspace.config))
+        .order_by(models.Workspace.created_at.desc())
     ).all()
     return [serialize_workspace(workspace) for workspace in workspaces]

@@ -314,7 +314,10 @@ def put_openclaw_config_api(
     try:
         base_config = workspace.config.openclaw_config_json or config_renderer.default_openclaw_config()
         if payload.raw_json5 and payload.raw_json5.strip():
-            base_config = config_renderer.parse_openclaw_raw_json5(payload.raw_json5)
+            base_config = config_renderer.restore_masked_openclaw_config(
+                base_config,
+                config_renderer.parse_openclaw_raw_json5(payload.raw_json5),
+            )
         merged = config_renderer.merge_openclaw_structured_values(base_config, payload.structured_values)
         merged = config_renderer.validate_openclaw_config(merged)
     except ValueError as exc:

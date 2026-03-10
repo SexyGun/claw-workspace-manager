@@ -10,12 +10,13 @@
         "fallbacks": []
       },
       "sandbox": {
-        "mode": "workspace-write"
+        "mode": "non-main",
+        "workspaceAccess": "rw"
       }
     }
   },
   "session": {
-    "dmScope": "workspace"
+    "dmScope": "main"
   },
   "hooks": {
     "enabled": false,

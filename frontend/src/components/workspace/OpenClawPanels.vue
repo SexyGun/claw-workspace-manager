@@ -9,6 +9,10 @@
             </div>
           </template>
           <n-form :model="openclawValues" label-placement="top">
+            <n-alert type="info" :show-icon="false" style="margin-bottom: 16px">
+              Providers、Session、Hooks、Cron 会合并到共享 OpenClaw 服务。Primary Provider 字段可直接配置 Base URL 和 API Key，多 Provider 继续用
+              JSON5。
+            </n-alert>
             <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
               <n-grid-item v-for="field in summary.openclaw_config?.schema.fields || []" :key="field.key">
                 <n-form-item :label="field.label">
@@ -117,6 +121,7 @@
 
 <script setup lang="ts">
 import {
+  NAlert,
   NButton,
   NCard,
   NDescriptions,

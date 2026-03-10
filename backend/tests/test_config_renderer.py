@@ -55,8 +55,9 @@ def test_merge_openclaw_structured_values_accepts_raw_json5_seed():
 
     assert merged["model"]["primary"] == "claude-sonnet-4-5"
     assert merged["model"]["fallbacks"] == ["gpt-4.1", "o3-mini"]
-    assert merged["sandbox"]["mode"] == "read-only"
-    assert merged["session"]["dmScope"] == "user"
+    assert merged["sandbox"]["mode"] == "non-main"
+    assert merged["sandbox"]["workspaceAccess"] == "ro"
+    assert merged["session"]["dmScope"] == "per-peer"
 
 
 def test_merge_openclaw_structured_values_supports_models_providers_json5():
@@ -79,6 +80,59 @@ def test_merge_openclaw_structured_values_supports_models_providers_json5():
     assert merged["models"]["providers"]["moonshot"]["baseUrl"] == "https://api.moonshot.ai/v1"
     assert merged["models"]["providers"]["moonshot"]["apiKey"] == "${MOONSHOT_API_KEY}"
     assert merged["models"]["providers"]["moonshot"]["models"][0]["id"] == "kimi-k2.5"
+
+
+def test_merge_openclaw_structured_values_supports_explicit_provider_fields_and_masked_secrets():
+    existing = config_renderer.merge_openclaw_structured_values(
+        config_renderer.default_openclaw_config(),
+        {
+            "provider_id": "moonshot",
+            "provider_base_url": "https://api.moonshot.ai/v1",
+            "provider_api_key": "sk-existing",
+            "provider_api": "openai-completions",
+            "provider_models_json5": """
+            [
+              {
+                id: "kimi-k2.5",
+                name: "Kimi K2.5",
+                reasoning: true,
+                input: ["text", "image"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 128000,
+                maxTokens: 8192
+              }
+            ]
+            """,
+        },
+    )
+
+    merged = config_renderer.merge_openclaw_structured_values(
+        existing,
+        {
+            "provider_id": "moonshot",
+            "provider_base_url": "https://api.moonshot.ai/v1",
+            "provider_api_key": MASKED_VALUE,
+            "provider_api": "openai-responses",
+            "provider_models_json5": """
+            [
+              {
+                id: "kimi-k2.5",
+                name: "Kimi K2.5",
+                reasoning: true,
+                input: ["text"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 128000,
+                maxTokens: 4096
+              }
+            ]
+            """,
+        },
+    )
+
+    provider = merged["models"]["providers"]["moonshot"]
+    assert provider["apiKey"] == "sk-existing"
+    assert provider["api"] == "openai-responses"
+    assert provider["models"][0]["maxTokens"] == 4096
 
 
 def test_load_openclaw_template_config_preserves_models_section(tmp_path):
@@ -111,6 +165,8 @@ def test_load_openclaw_template_config_preserves_models_section(tmp_path):
     loaded = config_renderer.load_openclaw_template_config(config_path)
 
     assert loaded["model"]["primary"] == "moonshot/kimi-k2.5"
+    assert loaded["sandbox"]["mode"] == "non-main"
+    assert loaded["sandbox"]["workspaceAccess"] == "rw"
     assert loaded["models"]["mode"] == "merge"
     assert loaded["models"]["providers"]["moonshot"]["apiKey"] == "${MOONSHOT_API_KEY}"
 
@@ -147,7 +203,11 @@ def test_render_openclaw_aggregate_payload_deduplicates_accounts():
     payload = config_renderer.render_openclaw_aggregate_payload(workspaces, settings)
 
     assert payload["gateway"]["port"] == 18500
+    assert payload["session"]["dmScope"] == "main"
     assert len(payload["channels"]["feishu"]["accounts"]) == 1
     assert len(payload["bindings"]) == 2
     assert payload["bindings"][0]["agentId"] == "workspace-1"
     assert payload["bindings"][1]["agentId"] == "workspace-2"
+    assert payload["bindings"][0]["match"]["accountId"] == "shared-account"
+    assert payload["agents"]["list"][0]["sandbox"]["mode"] == "non-main"
+    assert "session" not in payload["agents"]["list"][0]

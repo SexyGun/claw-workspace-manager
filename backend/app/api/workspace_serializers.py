@@ -122,7 +122,7 @@ def serialize_openclaw_config(workspace: models.Workspace, settings: Settings) -
     return OpenClawConfigRead(
         schema=config_renderer.OPENCLAW_SCHEMA,
         values=config_renderer.extract_openclaw_structured_values(openclaw_values),
-        raw_json5=config_renderer.openclaw_raw_json(openclaw_values),
+        raw_json5=config_renderer.openclaw_raw_json(config_renderer.mask_openclaw_config(openclaw_values)),
         rendered_path=str(local_path / ".openclaw" / "openclaw.json"),
         rendered_at=workspace.config.openclaw_rendered_at,
     )

@@ -128,7 +128,9 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
   bash deploy/install-native.sh
 ```
 
-如果 OpenClaw / Nanobot 安装在某个登录用户的 `~/.local/bin`，直接把整个部署切到这个用户即可。脚本现在固定使用单用户模型，manager 和 runtime 都会使用同一个 `APP_USER`：
+默认情况下，脚本会直接使用执行 `sudo bash deploy/install-native.sh` 的当前登录账户作为 `APP_USER`，不需要再手动传 `APP_USER` / `APP_GROUP`。如果 OpenClaw / Nanobot 就装在这个用户的 `~/.local/bin`，直接执行安装即可。
+
+只有在你想显式指定另一个账户时，才需要传：
 
 ```bash
 sudo env \
@@ -153,14 +155,14 @@ sudo env \
 sudo bash deploy/install-native.sh
 ```
 
-脚本会自动沿用上一次保存的 `APP_USER`、workspace 根目录和二进制路径配置。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，且新的 `~/claw` 目标目录不存在，会自动迁移到服务用户 home 下的新位置。
+脚本会继续复用上一次保存的 workspace 根目录和二进制路径配置；`APP_USER` / `APP_GROUP` 默认每次都取当前 `sudo` 调用者。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，且新的 `~/claw` 目标目录不存在，会自动迁移到服务用户 home 下的新位置。如果这次执行的 `sudo` 调用者和上一次不同，脚本也会把旧 `<old_app_home>/claw` 自动迁到新的 `<new_app_home>/claw`。
 
 如果只是修正 OpenClaw / Nanobot 二进制路径，通常更新 `/etc/claw-workspace-manager.env` 后直接重启对应 runtime service 即可；只有修改 `APP_USER`、`APP_GROUP` 或 unit 模板时才需要重新运行安装脚本并 `daemon-reload`。
 
 关键环境变量：
 
-- `APP_USER`：管理器服务用户，默认 `claw-manager`
-- `APP_GROUP`：管理器服务组，默认同 `APP_USER`
+- `APP_USER`：管理器服务用户，默认是当前 `sudo` 调用者；只有无法识别当前登录账户时才回退到 `claw-manager`
+- `APP_GROUP`：管理器服务组，默认取 `APP_USER` 的主组
 - `SQLITE_PATH`：SQLite 数据库路径
 - `WORKSPACE_ROOT`：管理器读取 workspace 的本地路径
 - `HOST_WORKSPACE_ROOT`：workspace 宿主机根目录
@@ -223,12 +225,12 @@ sudo systemctl restart claw-manager.service
 
 ## 工作区目录约定
 
-- 默认工作区根目录是 `backend/.data/workspaces`
+- 开发环境默认工作区根目录是 `backend/.data/workspaces`
 - 每个工作区目录格式是 `<workspace_root>/<owner_user_id>/<slug>`
 - `owner_user_id` 是所属用户 ID，不是工作区 ID
 - `slug` 由工作区名称规范化生成；如果结果为空，则回退为 `workspace`
 
-原生部署下，`<workspace_root>` 的默认值现在是服务用户 home 下的 `~/claw`。如果使用默认的 `claw-manager` 系统用户，实际路径会是 `/opt/claw-workspace-manager/home/claw`；如果把 `APP_USER` 设成现有登录用户，例如 `leechen`，则会变成 `/home/leechen/claw`。
+原生部署下，`<workspace_root>` 的默认值现在是服务用户 home 下的 `~/claw`。通常它会直接落到当前 `sudo` 调用者的 home，例如 `leechen` 执行安装时就是 `/home/leechen/claw`；只有在无法识别当前登录账户，或你显式指定 `APP_USER=claw-manager` 时，才会使用 `/opt/claw-workspace-manager/home/claw`。
 
 例如：
 

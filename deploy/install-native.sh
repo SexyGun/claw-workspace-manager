@@ -24,8 +24,30 @@ NANOBOT_BIN_WAS_SET="${NANOBOT_BIN+x}"
 SESSION_SECRET_WAS_SET="${SESSION_SECRET+x}"
 BOOTSTRAP_ADMIN_PASSWORD_WAS_SET="${BOOTSTRAP_ADMIN_PASSWORD+x}"
 
-APP_USER="${APP_USER:-claw-manager}"
-APP_GROUP="${APP_GROUP:-$APP_USER}"
+CURRENT_SYSTEM_USER=""
+CURRENT_SYSTEM_GROUP=""
+
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
+  CURRENT_SYSTEM_USER="$SUDO_USER"
+  CURRENT_SYSTEM_GROUP="$(id -gn "$SUDO_USER")"
+elif CURRENT_SYSTEM_USER="$(logname 2>/dev/null)" && [ -n "$CURRENT_SYSTEM_USER" ] && [ "$CURRENT_SYSTEM_USER" != "root" ] && id "$CURRENT_SYSTEM_USER" >/dev/null 2>&1; then
+  CURRENT_SYSTEM_GROUP="$(id -gn "$CURRENT_SYSTEM_USER")"
+else
+  CURRENT_SYSTEM_USER=""
+  CURRENT_SYSTEM_GROUP=""
+fi
+
+APP_USER="${APP_USER:-${CURRENT_SYSTEM_USER:-claw-manager}}"
+APP_GROUP="${APP_GROUP:-}"
+if [ -z "$APP_GROUP" ]; then
+  if [ -n "$CURRENT_SYSTEM_USER" ] && [ "$APP_USER" = "$CURRENT_SYSTEM_USER" ] && [ -n "$CURRENT_SYSTEM_GROUP" ]; then
+    APP_GROUP="$CURRENT_SYSTEM_GROUP"
+  elif id "$APP_USER" >/dev/null 2>&1; then
+    APP_GROUP="$(id -gn "$APP_USER")"
+  else
+    APP_GROUP="$APP_USER"
+  fi
+fi
 RUNTIME_USER="${RUNTIME_USER:-}"
 RUNTIME_GROUP="${RUNTIME_GROUP:-}"
 RUNTIME_HOME="${RUNTIME_HOME:-}"
@@ -70,6 +92,11 @@ SQLITE_PATH_DEFAULT=""
 WORKSPACE_ROOT_DEFAULT=""
 HOST_WORKSPACE_ROOT_DEFAULT=""
 RUNTIME_STATE_ROOT_DEFAULT=""
+EXISTING_ENV_APP_USER=""
+EXISTING_ENV_APP_GROUP=""
+EXISTING_ENV_RUNTIME_HOME=""
+EXISTING_ENV_WORKSPACE_ROOT=""
+EXISTING_ENV_HOST_WORKSPACE_ROOT=""
 WORKSPACE_TEMPLATE_ROOT_DEFAULT="$APP_ROOT/deploy/templates/base-workspace"
 OPENCLAW_WORKSPACE_TEMPLATE_ROOT_DEFAULT="$APP_ROOT/deploy/templates/openclaw-workspace"
 
@@ -205,11 +232,20 @@ load_existing_env() {
   if [ ! -f "$ENV_FILE" ]; then
     return
   fi
+  EXISTING_ENV_APP_USER="$(read_env_value APP_USER)"
+  EXISTING_ENV_APP_GROUP="$(read_env_value APP_GROUP)"
+  EXISTING_ENV_RUNTIME_HOME="$(read_env_value RUNTIME_HOME)"
+  EXISTING_ENV_WORKSPACE_ROOT="$(read_env_value WORKSPACE_ROOT)"
+  EXISTING_ENV_HOST_WORKSPACE_ROOT="$(read_env_value HOST_WORKSPACE_ROOT)"
   if [ -z "$APP_USER_WAS_SET" ]; then
-    APP_USER="$(read_env_value APP_USER)"
+    if [ -z "$CURRENT_SYSTEM_USER" ]; then
+      APP_USER="$EXISTING_ENV_APP_USER"
+    fi
   fi
   if [ -z "$APP_GROUP_WAS_SET" ]; then
-    APP_GROUP="$(read_env_value APP_GROUP)"
+    if [ -z "$CURRENT_SYSTEM_GROUP" ]; then
+      APP_GROUP="$EXISTING_ENV_APP_GROUP"
+    fi
   fi
   if [ -z "$RUNTIME_USER_WAS_SET" ]; then
     RUNTIME_USER="$(read_env_value RUNTIME_USER)"
@@ -245,8 +281,24 @@ load_existing_env() {
     BOOTSTRAP_ADMIN_PASSWORD="$(read_env_value BOOTSTRAP_ADMIN_PASSWORD)"
   fi
 
-  APP_USER="${APP_USER:-claw-manager}"
-  APP_GROUP="${APP_GROUP:-$APP_USER}"
+  APP_USER="${APP_USER:-${CURRENT_SYSTEM_USER:-claw-manager}}"
+  if [ -z "$APP_GROUP" ]; then
+    if [ -n "$CURRENT_SYSTEM_USER" ] && [ "$APP_USER" = "$CURRENT_SYSTEM_USER" ] && [ -n "$CURRENT_SYSTEM_GROUP" ]; then
+      APP_GROUP="$CURRENT_SYSTEM_GROUP"
+    elif id "$APP_USER" >/dev/null 2>&1; then
+      APP_GROUP="$(id -gn "$APP_USER")"
+    else
+      APP_GROUP="$APP_USER"
+    fi
+  elif [ -n "$CURRENT_SYSTEM_GROUP" ] && [ "$APP_USER" = "$CURRENT_SYSTEM_USER" ] && [ "$APP_GROUP" != "$CURRENT_SYSTEM_GROUP" ] && [ -z "$APP_GROUP_WAS_SET" ]; then
+    APP_GROUP="$CURRENT_SYSTEM_GROUP"
+  elif [ "$APP_GROUP" = "claw-manager" ] && [ "$APP_USER" != "claw-manager" ] && [ -z "$APP_GROUP_WAS_SET" ]; then
+    if id "$APP_USER" >/dev/null 2>&1; then
+      APP_GROUP="$(id -gn "$APP_USER")"
+    else
+      APP_GROUP="$APP_USER"
+    fi
+  fi
   OPENCLAW_BIN="${OPENCLAW_BIN:-/usr/local/bin/openclaw}"
   NANOBOT_BIN="${NANOBOT_BIN:-/usr/local/bin/nanobot}"
 }
@@ -487,6 +539,71 @@ path_has_entries() {
   find "$path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .
 }
 
+resolve_existing_managed_workspace_root() {
+  local previous_home=""
+
+  if [ -n "$EXISTING_ENV_RUNTIME_HOME" ]; then
+    previous_home="$EXISTING_ENV_RUNTIME_HOME"
+  elif [ -n "$EXISTING_ENV_APP_USER" ]; then
+    if previous_home="$(resolve_user_home "$EXISTING_ENV_APP_USER" 2>/dev/null)"; then
+      :
+    else
+      previous_home=""
+    fi
+  fi
+
+  if [ -z "$previous_home" ]; then
+    return
+  fi
+  printf '%s\n' "$previous_home/claw"
+}
+
+migrate_workspace_root_tree() {
+  local source_root="$1"
+  local target_root="$2"
+
+  if [ -z "$source_root" ] || [ -z "$target_root" ] || [ "$source_root" = "$target_root" ]; then
+    return
+  fi
+  if [ ! -d "$source_root" ]; then
+    return
+  fi
+
+  if [ -e "$target_root" ]; then
+    if [ ! -d "$target_root" ]; then
+      die "workspace root target exists and is not a directory: $target_root"
+    fi
+    if path_has_entries "$target_root"; then
+      die "both legacy workspace root $source_root and new workspace root $target_root exist; move data manually"
+    fi
+    rmdir "$target_root"
+  fi
+
+  log "migrating workspace root from $source_root to $target_root"
+  install -d "$(dirname "$target_root")"
+  mv "$source_root" "$target_root"
+}
+
+migrate_previous_managed_workspace_root_if_needed() {
+  local previous_managed_root=""
+
+  if [ -n "$WORKSPACE_ROOT_WAS_SET" ] || [ -n "$HOST_WORKSPACE_ROOT_WAS_SET" ]; then
+    return
+  fi
+
+  previous_managed_root="$(resolve_existing_managed_workspace_root)"
+  if [ -z "$previous_managed_root" ] || [ "$previous_managed_root" = "$WORKSPACE_ROOT_DEFAULT" ]; then
+    return
+  fi
+  if [ "$WORKSPACE_ROOT" != "$previous_managed_root" ] || [ "$HOST_WORKSPACE_ROOT" != "$previous_managed_root" ]; then
+    return
+  fi
+
+  migrate_workspace_root_tree "$previous_managed_root" "$WORKSPACE_ROOT_DEFAULT"
+  WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
+  HOST_WORKSPACE_ROOT="$WORKSPACE_ROOT_DEFAULT"
+}
+
 migrate_legacy_workspace_root_if_needed() {
   if [ "$WORKSPACE_ROOT" != "$WORKSPACE_ROOT_DEFAULT" ] || [ "$HOST_WORKSPACE_ROOT" != "$WORKSPACE_ROOT_DEFAULT" ]; then
     return
@@ -494,19 +611,7 @@ migrate_legacy_workspace_root_if_needed() {
   if [ -z "$LEGACY_WORKSPACE_ROOT" ] || [ "$LEGACY_WORKSPACE_ROOT" = "$WORKSPACE_ROOT" ] || [ ! -d "$LEGACY_WORKSPACE_ROOT" ]; then
     return
   fi
-  if [ -e "$WORKSPACE_ROOT" ]; then
-    if [ ! -d "$WORKSPACE_ROOT" ]; then
-      die "workspace root target exists and is not a directory: $WORKSPACE_ROOT"
-    fi
-    if path_has_entries "$WORKSPACE_ROOT"; then
-      die "both legacy workspace root $LEGACY_WORKSPACE_ROOT and new workspace root $WORKSPACE_ROOT exist; move data manually"
-    fi
-    rmdir "$WORKSPACE_ROOT"
-  fi
-
-  log "migrating legacy workspace root from $LEGACY_WORKSPACE_ROOT to $WORKSPACE_ROOT"
-  install -d "$(dirname "$WORKSPACE_ROOT")"
-  mv "$LEGACY_WORKSPACE_ROOT" "$WORKSPACE_ROOT"
+  migrate_workspace_root_tree "$LEGACY_WORKSPACE_ROOT" "$WORKSPACE_ROOT"
 }
 
 ensure_directories() {
@@ -799,6 +904,7 @@ main() {
   ensure_user
   ensure_single_user_runtime
   initialize_paths
+  migrate_previous_managed_workspace_root_if_needed
   migrate_legacy_workspace_root_if_needed
   ensure_runtime_binaries
   warn_if_binary_unusable_by_service_user "OpenClaw" "$OPENCLAW_BIN" "$RUNTIME_USER"

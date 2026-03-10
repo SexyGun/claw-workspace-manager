@@ -201,6 +201,118 @@ write_env_file
     assert "ignoring legacy RUNTIME_HOME=/home/legacy-runtime" in result.stderr
 
 
+def test_install_native_migrates_previous_managed_workspace_root_when_app_user_changes(tmp_path: Path) -> None:
+    env = base_env(tmp_path)
+    old_home = tmp_path / "old-service-home"
+    new_home = Path(env["APP_HOME_OVERRIDE"])
+    old_root = old_home / "claw"
+    old_workspace = old_root / "12" / "migrated-space"
+    old_workspace.mkdir(parents=True)
+    (old_workspace / "README.md").write_text("migrate me", encoding="utf-8")
+
+    env_file = Path(env["ENV_FILE"])
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_USER=legacy-manager",
+                "APP_GROUP=legacy-manager",
+                "RUNTIME_USER=legacy-manager",
+                "RUNTIME_GROUP=legacy-manager",
+                f"RUNTIME_HOME={old_home}",
+                f"WORKSPACE_ROOT={old_root}",
+                f"HOST_WORKSPACE_ROOT={old_root}",
+                "SESSION_SECRET=test-secret",
+                "BOOTSTRAP_ADMIN_PASSWORD=test-password",
+                "OPENCLAW_BIN=/bin/true",
+                "NANOBOT_BIN=/bin/true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_install_shell(
+        """
+load_existing_env
+ensure_single_user_runtime
+initialize_paths
+migrate_previous_managed_workspace_root_if_needed
+write_env_file
+""",
+        env,
+    )
+
+    new_root = new_home / "claw"
+    assert result.returncode == 0, result.stderr
+    assert not old_root.exists()
+    assert (new_root / "12" / "migrated-space" / "README.md").read_text(encoding="utf-8") == "migrate me"
+
+    env_text = env_file.read_text(encoding="utf-8")
+    assert f"WORKSPACE_ROOT={new_root}" in env_text
+    assert f"HOST_WORKSPACE_ROOT={new_root}" in env_text
+    assert "migrating workspace root from" in result.stdout
+
+
+def test_install_native_uses_current_sudo_user_without_app_env_overrides(tmp_path: Path) -> None:
+    env = base_env(tmp_path)
+    username, group = current_identity()
+    old_home = tmp_path / "old-service-home"
+    new_home = Path(env["APP_HOME_OVERRIDE"])
+    old_root = old_home / "claw"
+    old_workspace = old_root / "22" / "sudo-user-space"
+    old_workspace.mkdir(parents=True)
+    (old_workspace / "README.md").write_text("current user migration", encoding="utf-8")
+
+    env.pop("APP_USER")
+    env.pop("APP_GROUP")
+    env["SUDO_USER"] = username
+
+    env_file = Path(env["ENV_FILE"])
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text(
+        "\n".join(
+            [
+                "APP_USER=legacy-manager",
+                "APP_GROUP=legacy-manager",
+                "RUNTIME_USER=legacy-manager",
+                "RUNTIME_GROUP=legacy-manager",
+                f"RUNTIME_HOME={old_home}",
+                f"WORKSPACE_ROOT={old_root}",
+                f"HOST_WORKSPACE_ROOT={old_root}",
+                "SESSION_SECRET=test-secret",
+                "BOOTSTRAP_ADMIN_PASSWORD=test-password",
+                "OPENCLAW_BIN=/bin/true",
+                "NANOBOT_BIN=/bin/true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_install_shell(
+        """
+load_existing_env
+ensure_single_user_runtime
+initialize_paths
+migrate_previous_managed_workspace_root_if_needed
+write_env_file
+""",
+        env,
+    )
+
+    new_root = new_home / "claw"
+    assert result.returncode == 0, result.stderr
+    assert not old_root.exists()
+    assert (new_root / "22" / "sudo-user-space" / "README.md").read_text(encoding="utf-8") == "current user migration"
+
+    env_text = env_file.read_text(encoding="utf-8")
+    assert f"APP_USER={username}" in env_text
+    assert f"APP_GROUP={group}" in env_text
+    assert f"WORKSPACE_ROOT={new_root}" in env_text
+    assert f"HOST_WORKSPACE_ROOT={new_root}" in env_text
+
+
 def test_install_native_rejects_conflicting_legacy_and_new_workspace_roots(tmp_path: Path) -> None:
     env = base_env(tmp_path)
     fake_home = Path(env["APP_HOME_OVERRIDE"])

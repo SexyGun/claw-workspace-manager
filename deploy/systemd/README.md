@@ -2,7 +2,7 @@
 
 默认入口是仓库根目录下的 `deploy/install-native.sh`。脚本会完成：
 
-- 创建 `claw-manager` 系统用户
+- 默认使用当前 `sudo` 调用者作为服务用户；只有在无法识别当前登录账户时才创建 `claw-manager` 系统用户
 - 同步代码到 `/opt/claw-workspace-manager/app`
 - 创建 Python 虚拟环境并安装后端依赖
 - 构建前端并发布到 `backend/app/static`
@@ -30,7 +30,9 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
   bash deploy/install-native.sh
 ```
 
-如果二进制安装在某个已有登录用户的 `~/.local/bin`，直接把整个部署切到这个用户即可。脚本现在固定使用单用户模型，manager 和 runtime 都会使用同一个 `APP_USER`：
+默认情况下，脚本会直接使用执行 `sudo bash deploy/install-native.sh` 的当前登录账户作为 `APP_USER`，不需要再手动传 `APP_USER` / `APP_GROUP`。如果 OpenClaw / Nanobot 就装在这个用户的 `~/.local/bin`，直接执行安装即可。
+
+只有在你想显式指定另一个账户时，才需要传：
 
 ```bash
 sudo env \
@@ -51,7 +53,7 @@ sudo env \
 sudo bash deploy/install-native.sh
 ```
 
-脚本会自动复用上一次的服务用户、workspace 根目录和二进制路径。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，且新的 `~/claw` 目标目录不存在，会自动迁移到服务用户 home 下的新位置。
+脚本会继续复用上一次保存的 workspace 根目录和二进制路径；`APP_USER` / `APP_GROUP` 默认每次都取当前 `sudo` 调用者。如果检测到旧默认目录 `/srv/claw/workspaces` 仍在使用，且新的 `~/claw` 目标目录不存在，会自动迁移到服务用户 home 下的新位置。如果这次执行的 `sudo` 调用者和上一次不同，脚本也会把旧 `<old_app_home>/claw` 自动迁到新的 `<new_app_home>/claw`。
 
 OpenClaw / Nanobot 的二进制路径现在由 `/etc/claw-workspace-manager.env` 提供给 runtime unit；如果只是修正 `OPENCLAW_BIN` 或 `NANOBOT_BIN`，通常编辑 env 文件后直接重启对应 service 即可，不必重写 unit。若修改了 `APP_USER` / `APP_GROUP`，仍需要重新运行安装脚本并执行 `systemctl daemon-reload`。
 
@@ -66,7 +68,7 @@ OpenClaw / Nanobot 的二进制路径现在由 `/etc/claw-workspace-manager.env`
 - Nanobot 单工作区配置：`/srv/claw/runtime/nanobot/<workspace_id>/config.json`
 - Nanobot 单工作区环境文件：`/srv/claw/runtime/nanobot/<workspace_id>/runtime.env`
 
-默认 `APP_USER=claw-manager` 时，`<app_user_home>` 实际是 `/opt/claw-workspace-manager/home`，因此默认工作区根目录会是 `/opt/claw-workspace-manager/home/claw`。如果把 `APP_USER` 设为现有登录用户，例如 `leechen`，则对应目录会变成 `/home/leechen/claw`。
+通常 `APP_USER` 会直接取当前 `sudo` 调用者，因此 `leechen` 执行安装时，`<app_user_home>` 就是 `/home/leechen`，默认工作区根目录会是 `/home/leechen/claw`。只有在无法识别当前登录账户，或你显式指定 `APP_USER=claw-manager` 时，才会使用 `/opt/claw-workspace-manager/home/claw`。
 
 ## 手工调整
 
@@ -85,13 +87,13 @@ sudo systemctl restart claw-manager.service
 
 运行时相关变量：
 
-- `APP_USER` / `APP_GROUP`：管理器服务用户和组
+- `APP_USER` / `APP_GROUP`：管理器服务用户和组，默认取当前 `sudo` 调用者及其主组
 - `RUNTIME_USER` / `RUNTIME_GROUP` / `RUNTIME_HOME`：由安装脚本按 `APP_USER` 的 home 自动生成，不再支持与 manager 分离
 - `OPENCLAW_BIN` / `NANOBOT_BIN`：对应 runtime 二进制路径
 
 ## sudoers
 
-如果你不使用默认的 `claw-manager` 用户，请同步调整 `deploy/sudoers/claw-workspace-manager`，或直接重新运行脚本让它按当前变量重写 `/etc/sudoers.d/claw-workspace-manager`。
+如果你手工修改了 `deploy/sudoers/claw-workspace-manager` 模板，请在调整服务用户后重新运行脚本，让它按当前变量重写 `/etc/sudoers.d/claw-workspace-manager`。
 
 ## 注意
 

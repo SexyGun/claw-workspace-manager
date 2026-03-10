@@ -30,6 +30,16 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
   bash deploy/install-native.sh
 ```
 
+如果二进制安装在某个已有登录用户的 `~/.local/bin`，运行时 unit 应该直接切到这个用户，并显式传入该用户的 `HOME`：
+
+```bash
+sudo RUNTIME_USER=leechen \
+  RUNTIME_HOME=/home/leechen \
+  OPENCLAW_BIN=/home/leechen/.local/bin/openclaw \
+  NANOBOT_BIN=/home/leechen/.local/bin/nanobot \
+  bash deploy/install-native.sh
+```
+
 ## 默认目录
 
 - 应用目录：`/opt/claw-workspace-manager/app`
@@ -56,6 +66,13 @@ sudo systemctl daemon-reload
 sudo systemctl restart claw-manager.service
 ```
 
+运行时相关变量：
+
+- `APP_USER` / `APP_GROUP`：管理器服务用户和组
+- `RUNTIME_USER` / `RUNTIME_GROUP`：OpenClaw / Nanobot runtime unit 使用的用户和组
+- `RUNTIME_HOME`：runtime unit 的 `HOME`
+- `OPENCLAW_BIN` / `NANOBOT_BIN`：对应 runtime 二进制路径
+
 ## sudoers
 
 如果你不使用默认的 `claw-manager` 用户，请同步调整 `deploy/sudoers/claw-workspace-manager`，或直接重新运行脚本让它按当前变量重写 `/etc/sudoers.d/claw-workspace-manager`。
@@ -64,4 +81,5 @@ sudo systemctl restart claw-manager.service
 
 - OpenClaw 采用单共享服务，多 workspace 通过聚合配置里的 `agents.list` 和 `bindings` 生效。
 - Nanobot 采用每工作区一个原生实例，`systemd` 通过实例目录内的 `runtime.env` 启动 `nanobot gateway --config ...`。
+- 当 `RUNTIME_USER` 与 `APP_USER` 不同时，安装脚本会把 `/srv/claw` 调整为共享组可写，并让运行时 unit 继承 `RUNTIME_HOME`。
 - 一键部署脚本只负责安装管理器，不负责下载 OpenClaw / Nanobot 二进制本身。

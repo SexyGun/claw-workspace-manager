@@ -128,8 +128,23 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
   bash deploy/install-native.sh
 ```
 
+如果 OpenClaw / Nanobot 安装在当前登录用户的 `~/.local/bin`，推荐把运行时 unit 切到这个用户，而不是继续让 `claw-manager` 直接执行用户私有安装：
+
+```bash
+sudo RUNTIME_USER=leechen \
+  RUNTIME_HOME=/home/leechen \
+  OPENCLAW_BIN=/home/leechen/.local/bin/openclaw \
+  NANOBOT_BIN=/home/leechen/.local/bin/nanobot \
+  bash deploy/install-native.sh
+```
+
 关键环境变量：
 
+- `APP_USER`：管理器服务用户，默认 `claw-manager`
+- `APP_GROUP`：管理器服务组，默认同 `APP_USER`
+- `RUNTIME_USER`：OpenClaw / Nanobot runtime user，默认同 `APP_USER`
+- `RUNTIME_GROUP`：runtime 运行组，默认同 `APP_GROUP`
+- `RUNTIME_HOME`：runtime 用户的 `HOME`，默认按 `RUNTIME_USER` 自动探测
 - `SQLITE_PATH`：SQLite 数据库路径
 - `WORKSPACE_ROOT`：管理器读取 workspace 的本地路径
 - `HOST_WORKSPACE_ROOT`：workspace 宿主机根目录

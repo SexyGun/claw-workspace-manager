@@ -12,6 +12,9 @@ REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
 APP_USER="${APP_USER:-claw-manager}"
 APP_GROUP="${APP_GROUP:-$APP_USER}"
+RUNTIME_USER="${RUNTIME_USER:-$APP_USER}"
+RUNTIME_GROUP="${RUNTIME_GROUP:-$APP_GROUP}"
+RUNTIME_HOME="${RUNTIME_HOME:-}"
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/claw-workspace-manager}"
 APP_ROOT="${APP_ROOT:-$INSTALL_ROOT/app}"
 VENV_DIR="${VENV_DIR:-$INSTALL_ROOT/venv}"
@@ -177,6 +180,46 @@ ensure_user() {
   fi
 }
 
+resolve_user_home() {
+  local username="$1"
+  getent passwd "$username" | awk -F: '{print $6}'
+}
+
+ensure_runtime_user() {
+  if [ "$RUNTIME_USER" = "$APP_USER" ]; then
+    if [ -z "$RUNTIME_HOME" ]; then
+      RUNTIME_HOME="$(resolve_user_home "$APP_USER")"
+    fi
+    return
+  fi
+  if ! id "$RUNTIME_USER" >/dev/null 2>&1; then
+    die "RUNTIME_USER $RUNTIME_USER does not exist; create it first or rerun with RUNTIME_USER=$APP_USER"
+  fi
+  if [ -z "$RUNTIME_HOME" ]; then
+    RUNTIME_HOME="$(resolve_user_home "$RUNTIME_USER")"
+  fi
+  if [ -z "$RUNTIME_HOME" ] || [ ! -d "$RUNTIME_HOME" ]; then
+    die "RUNTIME_HOME for user $RUNTIME_USER is invalid: $RUNTIME_HOME"
+  fi
+}
+
+warn_if_binary_unusable_by_service_user() {
+  local label="$1"
+  local bin_path="$2"
+  local service_user="$3"
+  if [ ! -e "$bin_path" ]; then
+    warn "$label binary not found at $bin_path; related runtimes will not start until you install it"
+    return
+  fi
+  if [ ! -x "$bin_path" ]; then
+    warn "$label binary exists at $bin_path but is not executable"
+    return
+  fi
+  if ! "$SUDO_BIN" -u "$service_user" env CLAW_BIN_PATH="$bin_path" /bin/sh -lc 'test -x "$CLAW_BIN_PATH"'; then
+    warn "$label binary at $bin_path is not executable by service user $service_user; avoid per-user install paths under /home and use a shared location like /usr/local/bin"
+  fi
+}
+
 ensure_directories() {
   install -d "$INSTALL_ROOT"
   install -d "$APP_ROOT"
@@ -328,12 +371,14 @@ After=network.target
 
 [Service]
 Type=simple
-User=$APP_USER
-Group=$APP_GROUP
+User=$RUNTIME_USER
+Group=$RUNTIME_GROUP
+Environment=HOME=$RUNTIME_HOME
 Environment=OPENCLAW_BIN=$OPENCLAW_BIN
 Environment=CLAW_RUNTIME_ROOT=$RUNTIME_STATE_ROOT_DEFAULT
 ExecStart=/bin/sh -lc '"\$OPENCLAW_BIN" gateway --config "\$CLAW_RUNTIME_ROOT/openclaw/openclaw.json"'
 ExecReload=/bin/kill -HUP \$MAINPID
+UMask=0002
 Restart=on-failure
 RestartSec=3
 WorkingDirectory=$RUNTIME_STATE_ROOT_DEFAULT/openclaw
@@ -354,14 +399,16 @@ After=network.target
 
 [Service]
 Type=simple
-User=$APP_USER
-Group=$APP_GROUP
+User=$RUNTIME_USER
+Group=$RUNTIME_GROUP
+Environment=HOME=$RUNTIME_HOME
 Environment=NANOBOT_BIN=$NANOBOT_BIN
 EnvironmentFile=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i/runtime.env
 ExecStart=/bin/sh -lc '"\$NANOBOT_BIN" gateway --config "\$NANOBOT_CONFIG_PATH" --port "\$NANOBOT_PORT"'
 KillMode=control-group
 KillSignal=SIGTERM
 TimeoutStopSec=15
+UMask=0002
 Restart=on-failure
 RestartSec=3
 WorkingDirectory=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i
@@ -395,7 +442,10 @@ EOF
 }
 
 set_permissions() {
-  chown -R "$APP_USER:$APP_GROUP" "$INSTALL_ROOT" "$DATA_ROOT"
+  chown -R "$APP_USER:$APP_GROUP" "$INSTALL_ROOT"
+  chown -R "$APP_USER:$APP_GROUP" "$DATA_ROOT"
+  chmod -R g+rwX "$DATA_ROOT"
+  find "$DATA_ROOT" -type d -exec chmod g+s {} +
 }
 
 start_manager_service() {
@@ -414,15 +464,13 @@ print_summary() {
   printf 'Install root: %s\n' "$INSTALL_ROOT"
   printf 'Data root: %s\n' "$DATA_ROOT"
   printf 'Admin username: %s\n' "$BOOTSTRAP_ADMIN_USERNAME"
+  printf 'Runtime user: %s\n' "$RUNTIME_USER"
+  printf 'Runtime home: %s\n' "$RUNTIME_HOME"
   if [ "$GENERATED_ADMIN_PASSWORD" -eq 1 ]; then
     printf 'Generated admin password: %s\n' "$BOOTSTRAP_ADMIN_PASSWORD"
   fi
-  if [ ! -x "$OPENCLAW_BIN" ]; then
-    warn "OpenClaw binary not found at $OPENCLAW_BIN; shared runtime unit will not start until you install it"
-  fi
-  if [ ! -x "$NANOBOT_BIN" ]; then
-    warn "Nanobot binary not found at $NANOBOT_BIN; workspace runtimes will not start until you install it"
-  fi
+  warn_if_binary_unusable_by_service_user "OpenClaw" "$OPENCLAW_BIN" "$RUNTIME_USER"
+  warn_if_binary_unusable_by_service_user "Nanobot" "$NANOBOT_BIN" "$RUNTIME_USER"
 }
 
 main() {
@@ -442,6 +490,9 @@ main() {
   fi
   ensure_group
   ensure_user
+  ensure_runtime_user
+  warn_if_binary_unusable_by_service_user "OpenClaw" "$OPENCLAW_BIN" "$RUNTIME_USER"
+  warn_if_binary_unusable_by_service_user "Nanobot" "$NANOBOT_BIN" "$RUNTIME_USER"
   ensure_directories
   sync_source_tree
   install_backend

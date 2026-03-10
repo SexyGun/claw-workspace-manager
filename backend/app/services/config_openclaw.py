@@ -367,7 +367,13 @@ def merge_explicit_openclaw_provider(existing: dict[str, Any], incoming: dict[st
     provider = copy.deepcopy(current_provider)
 
     if "provider_base_url" in incoming:
-        provider["baseUrl"] = incoming["provider_base_url"]
+        base_url = incoming["provider_base_url"]
+        if not isinstance(base_url, str):
+            raise ValueError("provider_base_url must be a string")
+        if base_url.strip():
+            provider["baseUrl"] = base_url
+        else:
+            provider.pop("baseUrl", None)
     if "provider_api_key" in incoming:
         api_key = incoming["provider_api_key"]
         if not isinstance(api_key, str):
@@ -375,9 +381,21 @@ def merge_explicit_openclaw_provider(existing: dict[str, Any], incoming: dict[st
         if api_key != MASKED_VALUE:
             provider["apiKey"] = api_key
     if "provider_auth" in incoming:
-        provider["auth"] = incoming["provider_auth"]
+        auth = incoming["provider_auth"]
+        if not isinstance(auth, str):
+            raise ValueError("provider_auth must be a string")
+        if auth.strip():
+            provider["auth"] = auth
+        else:
+            provider.pop("auth", None)
     if "provider_api" in incoming:
-        provider["api"] = incoming["provider_api"]
+        api = incoming["provider_api"]
+        if not isinstance(api, str):
+            raise ValueError("provider_api must be a string")
+        if api.strip():
+            provider["api"] = api
+        else:
+            provider.pop("api", None)
     if "provider_models_json5" in incoming:
         raw_models = incoming["provider_models_json5"]
         if not isinstance(raw_models, str):

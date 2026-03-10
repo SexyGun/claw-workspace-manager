@@ -135,6 +135,27 @@ def test_merge_openclaw_structured_values_supports_explicit_provider_fields_and_
     assert provider["models"][0]["maxTokens"] == 4096
 
 
+def test_merge_openclaw_structured_values_ignores_blank_optional_provider_fields():
+    merged = config_renderer.merge_openclaw_structured_values(
+        config_renderer.default_openclaw_config(),
+        {
+            "provider_id": "MiniMax",
+            "provider_base_url": "https://api.minimaxi.com/anthropic",
+            "provider_api_key": "sk-cp-xxxx",
+            "provider_auth": "",
+            "provider_api": "",
+            "provider_models_json5": "",
+        },
+    )
+
+    provider = merged["models"]["providers"]["MiniMax"]
+    assert provider["baseUrl"] == "https://api.minimaxi.com/anthropic"
+    assert provider["apiKey"] == "sk-cp-xxxx"
+    assert "auth" not in provider
+    assert "api" not in provider
+    assert provider["models"] == []
+
+
 def test_load_openclaw_template_config_preserves_models_section(tmp_path):
     config_path = tmp_path / "openclaw.json"
     config_path.write_text(

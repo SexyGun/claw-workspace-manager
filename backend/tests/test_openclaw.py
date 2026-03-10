@@ -70,6 +70,43 @@ def test_openclaw_workspace_creation_and_aggregate_rendering(client: TestClient,
     assert aggregate["bindings"][0]["agentId"] == f"workspace-{workspace['id']}"
 
 
+def test_openclaw_config_supports_models_providers(client: TestClient, app_env):
+    login(client, "admin", "admin-password")
+
+    workspace = client.post("/api/workspaces", json={"name": "Provider Lab", "workspace_type": "openclaw"}).json()
+    workspace_id = workspace["id"]
+
+    save_response = client.put(
+        f"/api/workspaces/{workspace_id}/openclaw-config",
+        json={
+            "structured_values": {
+                "providers_json5": """
+                {
+                  moonshot: {
+                    baseUrl: "https://api.moonshot.ai/v1",
+                    apiKey: "${MOONSHOT_API_KEY}",
+                    api: "openai-completions",
+                    models: [{ id: "kimi-k2.5", name: "Kimi K2.5" }]
+                  }
+                }
+                """
+            }
+        },
+    )
+    assert save_response.status_code == 200, save_response.text
+
+    detail_response = client.get(f"/api/workspaces/{workspace_id}")
+    assert detail_response.status_code == 200
+    detail = detail_response.json()
+    assert "moonshot" in detail["openclaw_config"]["values"]["providers_json5"]
+
+    rendered_path = Path(app_env["workspaces_local"]) / "1" / "provider-lab" / ".openclaw" / "openclaw.json"
+    payload = json.loads(rendered_path.read_text(encoding="utf-8"))
+    assert payload["models"]["providers"]["moonshot"]["baseUrl"] == "https://api.moonshot.ai/v1"
+    assert payload["models"]["providers"]["moonshot"]["apiKey"] == "${MOONSHOT_API_KEY}"
+    assert payload["models"]["providers"]["moonshot"]["models"][0]["id"] == "kimi-k2.5"
+
+
 def test_openclaw_workspace_activation_follows_route_not_shared_service(client: TestClient):
     login(client, "admin", "admin-password")
 

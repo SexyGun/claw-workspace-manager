@@ -41,6 +41,12 @@ OPENCLAW_SCHEMA: dict[str, Any] = {
         {"key": "hooks_token", "label": "Hooks Token", "type": "password"},
         {"key": "cron_enabled", "label": "Cron Enabled", "type": "boolean"},
         {"key": "cron_max_concurrent_runs", "label": "Cron Max Concurrent Runs", "type": "number"},
+        {
+            "key": "providers_json5",
+            "label": "Models Providers JSON5",
+            "type": "textarea",
+            "placeholder": '{\n  moonshot: {\n    baseUrl: "https://api.moonshot.ai/v1",\n    apiKey: "${MOONSHOT_API_KEY}",\n    api: "openai-completions",\n    models: [{ id: "kimi-k2.5", name: "Kimi K2.5" }]\n  }\n}',
+        },
     ],
 }
 
@@ -100,6 +106,7 @@ def extract_openclaw_structured_values(values: dict[str, Any]) -> dict[str, Any]
         if isinstance(fallbacks, list)
         else ""
     )
+    providers = get_nested_value(normalized, ["models", "providers"], {})
     return {
         "primary_model": get_nested_value(normalized, ["model", "primary"], ""),
         "fallback_models": fallback_text,
@@ -110,6 +117,7 @@ def extract_openclaw_structured_values(values: dict[str, Any]) -> dict[str, Any]
         "hooks_token": get_nested_value(normalized, ["hooks", "token"], ""),
         "cron_enabled": get_nested_value(normalized, ["cron", "enabled"], False),
         "cron_max_concurrent_runs": get_nested_value(normalized, ["cron", "maxConcurrentRuns"], 1),
+        "providers_json5": json.dumps(providers if isinstance(providers, dict) else {}, indent=2, ensure_ascii=False),
     }
 
 
@@ -120,6 +128,18 @@ def parse_openclaw_raw_json5(raw_json5: str) -> dict[str, Any]:
         raise ValueError(f"invalid openclaw json5: {exc}") from exc
     if not isinstance(parsed, dict):
         raise ValueError("openclaw raw config must be a JSON object")
+    return parsed
+
+
+def parse_openclaw_providers_json5(raw_json5: str) -> dict[str, Any]:
+    if not raw_json5.strip():
+        return {}
+    try:
+        parsed = json5.loads(raw_json5)
+    except Exception as exc:
+        raise ValueError(f"invalid providers json5: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("models.providers must be a JSON object")
     return parsed
 
 
@@ -150,6 +170,11 @@ def merge_openclaw_structured_values(existing: dict[str, Any], incoming: dict[st
         set_nested_value(merged, ["cron", "enabled"], incoming["cron_enabled"])
     if "cron_max_concurrent_runs" in incoming:
         set_nested_value(merged, ["cron", "maxConcurrentRuns"], incoming["cron_max_concurrent_runs"])
+    if "providers_json5" in incoming:
+        raw_providers = incoming["providers_json5"]
+        if not isinstance(raw_providers, str):
+            raise ValueError("providers_json5 must be a string")
+        set_nested_value(merged, ["models", "providers"], parse_openclaw_providers_json5(raw_providers))
     return normalize_openclaw_config(merged)
 
 
@@ -174,6 +199,16 @@ def validate_openclaw_config(values: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("cron.enabled must be boolean")
     if not isinstance(checks["cron_max_concurrent_runs"], int):
         raise ValueError("cron.maxConcurrentRuns must be integer")
+    models = normalized.get("models")
+    if models is not None:
+        if not isinstance(models, dict):
+            raise ValueError("models must be object")
+        providers = models.get("providers")
+        if providers is not None and not isinstance(providers, dict):
+            raise ValueError("models.providers must be object")
+        mode = models.get("mode")
+        if mode is not None and mode not in {"merge", "replace"}:
+            raise ValueError("models.mode is not supported")
     return normalized
 
 
@@ -229,6 +264,7 @@ def load_openclaw_template_config(file_path: Path) -> dict[str, Any]:
     if "agents" in raw_values:
         raw_values = {
             "model": get_nested_value(raw_values, ["agents", "defaults", "model"], {}),
+            "models": raw_values.get("models", {}),
             "sandbox": get_nested_value(raw_values, ["agents", "defaults", "sandbox"], {}),
             "session": raw_values.get("session", {}),
             "hooks": raw_values.get("hooks", {}),

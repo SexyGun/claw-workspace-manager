@@ -59,6 +59,62 @@ def test_merge_openclaw_structured_values_accepts_raw_json5_seed():
     assert merged["session"]["dmScope"] == "user"
 
 
+def test_merge_openclaw_structured_values_supports_models_providers_json5():
+    merged = config_renderer.merge_openclaw_structured_values(
+        config_renderer.default_openclaw_config(),
+        {
+            "providers_json5": """
+            {
+              moonshot: {
+                baseUrl: "https://api.moonshot.ai/v1",
+                apiKey: "${MOONSHOT_API_KEY}",
+                api: "openai-completions",
+                models: [{ id: "kimi-k2.5", name: "Kimi K2.5" }]
+              }
+            }
+            """
+        },
+    )
+
+    assert merged["models"]["providers"]["moonshot"]["baseUrl"] == "https://api.moonshot.ai/v1"
+    assert merged["models"]["providers"]["moonshot"]["apiKey"] == "${MOONSHOT_API_KEY}"
+    assert merged["models"]["providers"]["moonshot"]["models"][0]["id"] == "kimi-k2.5"
+
+
+def test_load_openclaw_template_config_preserves_models_section(tmp_path):
+    config_path = tmp_path / "openclaw.json"
+    config_path.write_text(
+        """
+        {
+          agents: {
+            defaults: {
+              model: { primary: "moonshot/kimi-k2.5", fallbacks: [] },
+              sandbox: { mode: "workspace-write" }
+            }
+          },
+          models: {
+            mode: "merge",
+            providers: {
+              moonshot: {
+                baseUrl: "https://api.moonshot.ai/v1",
+                apiKey: "${MOONSHOT_API_KEY}",
+                api: "openai-completions",
+                models: [{ id: "kimi-k2.5", name: "Kimi K2.5" }]
+              }
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    loaded = config_renderer.load_openclaw_template_config(config_path)
+
+    assert loaded["model"]["primary"] == "moonshot/kimi-k2.5"
+    assert loaded["models"]["mode"] == "merge"
+    assert loaded["models"]["providers"]["moonshot"]["apiKey"] == "${MOONSHOT_API_KEY}"
+
+
 def test_render_openclaw_aggregate_payload_deduplicates_accounts():
     settings = SimpleNamespace(openclaw_gateway_port=18500)
     workspaces = [

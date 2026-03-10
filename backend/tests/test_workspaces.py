@@ -48,7 +48,9 @@ def test_workspace_creation_renders_configs(client: TestClient, app_env):
     assert config_payload["providers"]["custom"]["api_base"] == "http://localhost:8000/v1"
     assert config_payload["tools"]["restrict_to_workspace"] is True
     assert "feishu" in config_payload["channels"]
+    assert config_payload["channels"]["feishu"]["allowFrom"] == ["*"]
     assert workspace["activation_state"] == "inactive"
+    assert workspace["listen_port"] == 18080
     assert detail["nanobot_agent_config"]["values"]["model"] == "anthropic/claude-sonnet-4-5"
     assert detail["nanobot_agent_config"]["values"]["provider"] == "auto"
     assert detail["nanobot_provider_config"]["values"]["custom"]["api_base"] == "http://localhost:8000/v1"
@@ -58,6 +60,12 @@ def test_workspace_creation_renders_configs(client: TestClient, app_env):
 
     second_detail = client.get(f"/api/workspaces/{second_response.json()['id']}").json()
     assert second_detail["runtime_status"]["listen_port"] == 18081
+
+    list_response = client.get("/api/workspaces")
+    assert list_response.status_code == 200
+    listed = {item["id"]: item for item in list_response.json()}
+    assert listed[workspace["id"]]["listen_port"] == 18080
+    assert listed[second_response.json()["id"]]["listen_port"] == 18081
 
     workspace_types_response = client.get("/api/workspace-types")
     assert workspace_types_response.status_code == 200

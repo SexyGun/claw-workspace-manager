@@ -11,9 +11,14 @@
               <n-tag :type="summary.workspace.workspace_type === 'openclaw' ? 'info' : 'success'">
                 {{ summary.workspace.workspace_type }}
               </n-tag>
-              <n-tag v-if="isBaseWorkspace" :type="activationTagType">
-                {{ summary.workspace.activation_state ?? 'inactive' }}
-              </n-tag>
+              <template v-if="isBaseWorkspace">
+                <n-tag :type="activationTagType">
+                  {{ summary.workspace.activation_state ?? 'inactive' }}
+                </n-tag>
+                <n-tag v-if="summary.workspace.listen_port" type="info">
+                  port {{ summary.workspace.listen_port }}
+                </n-tag>
+              </template>
               <n-tag v-else :type="runtimeTagType">{{ runtimeStatus?.state ?? 'unknown' }}</n-tag>
             </n-space>
             <div class="path-text">
@@ -122,20 +127,27 @@
                   </div>
                 </template>
                 <n-space vertical size="large">
+                  <n-form-item label="Provider">
+                    <n-select
+                      :value="selectedProviderKey"
+                      @update:value="updateSelectedProvider"
+                      :options="providerOptions"
+                    />
+                  </n-form-item>
                   <n-card
-                    v-for="section in summary.nanobot_provider_config?.schema.sections || []"
-                    :key="section.key"
+                    v-if="selectedProviderSection"
+                    :key="selectedProviderSection.key"
                     embedded
                     class="section-card"
                   >
-                    <template #header>{{ section.title }}</template>
-                    <n-form :model="providerValues[section.key]" label-placement="top">
+                    <template #header>{{ selectedProviderSection.title }}</template>
+                    <n-form :model="providerValues[selectedProviderSection.key]" label-placement="top">
                       <n-grid cols="1" responsive="screen" :x-gap="12">
-                        <n-grid-item v-for="field in section.fields" :key="field.key">
+                        <n-grid-item v-for="field in selectedProviderSection.fields" :key="field.key">
                           <n-form-item :label="field.label">
                             <n-input
-                              :value="providerTextValue(section.key, field.key)"
-                              @update:value="updateProviderText(section.key, field.key, $event)"
+                              :value="providerTextValue(selectedProviderSection.key, field.key)"
+                              @update:value="updateProviderText(selectedProviderSection.key, field.key, $event)"
                               :type="field.type === 'password' ? 'password' : field.type === 'textarea' ? 'textarea' : 'text'"
                               :autosize="field.type === 'textarea' ? { minRows: 3, maxRows: 6 } : undefined"
                               :placeholder="field.placeholder"
@@ -371,6 +383,7 @@ const savingProviders = ref(false)
 const savingOpenClaw = ref(false)
 const savingOpenClawChannel = ref(false)
 const openclawRawJson = ref('')
+const selectedProviderKey = ref<string | null>(null)
 
 const nanobotValues = reactive<Record<string, Record<string, unknown>>>({})
 const agentValues = reactive<Record<string, unknown>>({})
@@ -381,6 +394,15 @@ const openclawChannelValues = reactive<Record<string, unknown>>({})
 const isBaseWorkspace = computed(() => summary.value?.workspace.workspace_type === 'base')
 const workspaceName = computed(() => summary.value?.workspace.name ?? '')
 const runtimeStatus = computed(() => summary.value?.runtime_status ?? null)
+const providerOptions = computed(() =>
+  (summary.value?.nanobot_provider_config?.schema.sections || []).map((section) => ({
+    label: section.title,
+    value: section.key,
+  })),
+)
+const selectedProviderSection = computed(() =>
+  (summary.value?.nanobot_provider_config?.schema.sections || []).find((section) => section.key === selectedProviderKey.value) ?? null,
+)
 const activationTagType = computed(() => {
   switch (summary.value?.workspace.activation_state) {
     case 'active':
@@ -447,6 +469,9 @@ function agentSelectValue(field: string) {
 
 function updateAgentText(field: string, value: string | null) {
   agentValues[field] = value ?? ''
+  if (field === 'provider' && value && value !== 'auto') {
+    selectedProviderKey.value = value
+  }
 }
 
 function providerTextValue(section: string, field: string) {
@@ -459,6 +484,33 @@ function updateProviderText(section: string, field: string, value: string) {
     providerValues[section] = {}
   }
   providerValues[section][field] = value
+}
+
+function updateSelectedProvider(value: string | null) {
+  selectedProviderKey.value = value
+}
+
+function providerHasValues(sectionKey: string) {
+  const values = providerValues[sectionKey]
+  if (!values) {
+    return false
+  }
+  return Object.values(values).some((value) => typeof value === 'string' && value.trim().length > 0)
+}
+
+function resolveDefaultProviderKey(nextSummary: WorkspaceSummary) {
+  const sections = nextSummary.nanobot_provider_config?.schema.sections || []
+  if (sections.length === 0) {
+    return null
+  }
+  const agentProvider = typeof nextSummary.nanobot_agent_config?.values?.provider === 'string'
+    ? nextSummary.nanobot_agent_config.values.provider
+    : ''
+  if (agentProvider && agentProvider !== 'auto' && sections.some((section) => section.key === agentProvider)) {
+    return agentProvider
+  }
+  const firstConfigured = sections.find((section) => providerHasValues(section.key))
+  return firstConfigured?.key ?? sections[0].key
 }
 
 function openclawBooleanValue(field: string) {
@@ -529,6 +581,7 @@ function populateForms(nextSummary: WorkspaceSummary) {
       providerValues[section] = { ...(values as Record<string, unknown>) }
     }
   }
+  selectedProviderKey.value = resolveDefaultProviderKey(nextSummary)
 
   resetObject(openclawValues)
   if (nextSummary.openclaw_config) {

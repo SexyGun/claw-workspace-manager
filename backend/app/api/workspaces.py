@@ -110,6 +110,7 @@ def serialize_workspace(workspace: models.Workspace) -> WorkspaceRead:
             "template_version": workspace.template_version,
             "status": workspace.status,
             "activation_state": workspace_activation_state(workspace.runtime),
+            "listen_port": workspace.runtime.listen_port if workspace.runtime else None,
             "created_at": workspace.created_at,
         }
     )
@@ -640,10 +641,14 @@ def start_workspace_runtime_api(
     workspace_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
     gateway_manager: GatewayManager = Depends(get_gateway_manager),
 ) -> RuntimeStatusResponse:
     workspace = get_workspace_for_user(workspace_id, current_user, db)
     ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "runtime")
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    render_workspace_artifacts(db, workspace, settings)
     workspace = load_workspace(db, workspace.id)
     assert workspace is not None
     return serialize_runtime_status(gateway_manager.start(db, workspace))
@@ -668,10 +673,14 @@ def restart_workspace_runtime_api(
     workspace_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
     gateway_manager: GatewayManager = Depends(get_gateway_manager),
 ) -> RuntimeStatusResponse:
     workspace = get_workspace_for_user(workspace_id, current_user, db)
     ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "runtime")
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    render_workspace_artifacts(db, workspace, settings)
     workspace = load_workspace(db, workspace.id)
     assert workspace is not None
     return serialize_runtime_status(gateway_manager.restart(db, workspace))

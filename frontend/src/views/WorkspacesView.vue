@@ -29,6 +29,9 @@
               </n-space>
               <h3>{{ workspace.name }}</h3>
               <p>{{ workspace.slug }}</p>
+              <n-text v-if="workspace.workspace_type === 'base' && workspace.listen_port" depth="2">
+                网关端口 {{ workspace.listen_port }}
+              </n-text>
               <n-text depth="3">{{ workspace.host_path }}</n-text>
             </n-card>
           </router-link>

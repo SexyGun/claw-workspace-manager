@@ -359,6 +359,9 @@ Group=$APP_GROUP
 Environment=NANOBOT_BIN=$NANOBOT_BIN
 EnvironmentFile=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i/runtime.env
 ExecStart=/bin/sh -lc '"\$NANOBOT_BIN" gateway --config "\$NANOBOT_CONFIG_PATH" --port "\$NANOBOT_PORT"'
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=15
 Restart=on-failure
 RestartSec=3
 WorkingDirectory=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i

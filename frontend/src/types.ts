@@ -21,7 +21,8 @@ export interface Workspace {
   host_path: string
   template_version: string
   status: string
-   activation_state: 'active' | 'inactive' | 'error' | null
+  activation_state: 'active' | 'inactive' | 'error' | null
+  listen_port: number | null
   created_at: string
 }
 

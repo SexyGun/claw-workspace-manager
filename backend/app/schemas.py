@@ -80,6 +80,7 @@ class WorkspaceRead(BaseModel):
     template_version: str
     status: str
     activation_state: Optional[Literal["active", "inactive", "error"]] = None
+    listen_port: Optional[int] = None
     created_at: datetime
 
 

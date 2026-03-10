@@ -165,6 +165,7 @@ OPENCLAW_FALLBACK_SEPARATOR = ","
 QQ_LEGACY_MIGRATION_WARNING = "QQ legacy config could not be migrated automatically; re-enter App ID and Secret."
 NANOBOT_ALLOWED_TOP_LEVEL_KEYS = {"agents", "channels", "providers", "gateway", "tools"}
 PROVIDER_SENSITIVE_FIELDS = {"api_key"}
+CHANNEL_ALLOW_ALL = ["*"]
 
 NANOBOT_LEGACY_CHANNEL_FIELDS: dict[str, set[str]] = {
     "feishu": {"webhook"},
@@ -257,20 +258,20 @@ def default_nanobot_instance_config() -> dict[str, Any]:
                 "app_secret": "",
                 "encrypt_key": "",
                 "verification_token": "",
-                "allow_from": [],
+                "allowFrom": ["*"],
                 "react_emoji": "THUMBSUP",
             },
             "dingtalk": {
                 "enabled": False,
                 "client_id": "",
                 "client_secret": "",
-                "allow_from": [],
+                "allowFrom": ["*"],
             },
             "qq": {
                 "enabled": False,
                 "app_id": "",
                 "secret": "",
-                "allow_from": [],
+                "allowFrom": ["*"],
             },
         },
         "providers": {},
@@ -774,8 +775,26 @@ def render_nanobot_channels(existing_channels: dict[str, Any], managed_channels:
         for legacy_key in NANOBOT_LEGACY_CHANNEL_FIELDS.get(section_key, set()):
             current.pop(legacy_key, None)
         current.update(values)
+        current = normalize_runtime_channel_section(section_key, current)
         channels[section_key] = current
     return channels
+
+
+def normalize_runtime_channel_section(section_key: str, values: dict[str, Any]) -> dict[str, Any]:
+    normalized = copy.deepcopy(values if isinstance(values, dict) else {})
+    allow_from = normalized.pop("allow_from", None)
+    allow_from_value = normalized.get("allowFrom", allow_from)
+    if isinstance(allow_from_value, list):
+        allow_from_value = [item for item in allow_from_value if isinstance(item, str) and item]
+    else:
+        allow_from_value = []
+
+    if section_key == "feishu" and not allow_from_value:
+        normalized["allowFrom"] = CHANNEL_ALLOW_ALL.copy()
+    elif allow_from_value:
+        normalized["allowFrom"] = allow_from_value
+
+    return normalized
 
 
 def render_openclaw_workspace_payload(openclaw_config: dict[str, Any]) -> dict[str, Any]:

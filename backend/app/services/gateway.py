@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -59,9 +60,9 @@ class NativeGatewayManager(GatewayManager):
         runtime = self._require_runtime(workspace)
         try:
             unit_status = self.controller.start(runtime.unit_name)
-            return self._save_status(db, runtime, unit_status)
+            return self._save_status(db, workspace, runtime, unit_status, clear_restart_flag=True)
         except RuntimeControlError as exc:
-            return self._save_error(db, runtime, str(exc))
+            return self._save_error(db, workspace, runtime, str(exc))
 
     def stop(self, db: Session, workspace: models.Workspace) -> RuntimeStatus:
         runtime = self._require_runtime(workspace)
@@ -69,25 +70,25 @@ class NativeGatewayManager(GatewayManager):
             unit_status = self.controller.stop(runtime.unit_name)
             if unit_status.stopped_at is None:
                 unit_status.stopped_at = datetime.now(timezone.utc)
-            return self._save_status(db, runtime, unit_status)
+            return self._save_status(db, workspace, runtime, unit_status, clear_restart_flag=True)
         except RuntimeControlError as exc:
-            return self._save_error(db, runtime, str(exc))
+            return self._save_error(db, workspace, runtime, str(exc))
 
     def restart(self, db: Session, workspace: models.Workspace) -> RuntimeStatus:
         runtime = self._require_runtime(workspace)
         try:
             unit_status = self.controller.restart(runtime.unit_name)
-            return self._save_status(db, runtime, unit_status)
+            return self._save_status(db, workspace, runtime, unit_status, clear_restart_flag=True)
         except RuntimeControlError as exc:
-            return self._save_error(db, runtime, str(exc))
+            return self._save_error(db, workspace, runtime, str(exc))
 
     def status(self, db: Session, workspace: models.Workspace) -> RuntimeStatus:
         runtime = self._require_runtime(workspace)
         try:
             unit_status = self.controller.status(runtime.unit_name)
-            return self._save_status(db, runtime, unit_status)
+            return self._save_status(db, workspace, runtime, unit_status, clear_restart_flag=False)
         except RuntimeControlError as exc:
-            return self._save_error(db, runtime, str(exc))
+            return self._save_error(db, workspace, runtime, str(exc))
 
     def _require_runtime(self, workspace: models.Workspace) -> models.WorkspaceRuntime:
         runtime = workspace.runtime
@@ -98,8 +99,11 @@ class NativeGatewayManager(GatewayManager):
     def _save_status(
         self,
         db: Session,
+        workspace: models.Workspace,
         runtime: models.WorkspaceRuntime,
         unit_status: SystemdUnitStatus,
+        *,
+        clear_restart_flag: bool,
     ) -> RuntimeStatus:
         runtime.controller_kind = RUNTIME_CONTROLLER_SYSTEMD
         runtime.unit_name = unit_status.unit_name
@@ -108,29 +112,30 @@ class NativeGatewayManager(GatewayManager):
         runtime.last_error = None
         runtime.started_at = unit_status.started_at
         runtime.stopped_at = unit_status.stopped_at if unit_status.state != "running" else None
-        runtime.needs_restart = False
+        if clear_restart_flag:
+            runtime.needs_restart = False
         db.add(runtime)
         db.commit()
         db.refresh(runtime)
-        return RuntimeStatus(
-            state=runtime.state,
-            scope=runtime.scope,
-            controller_kind=runtime.controller_kind,
-            unit_name=runtime.unit_name,
-            process_id=runtime.process_id,
-            listen_port=runtime.listen_port,
-            last_error=runtime.last_error,
-            started_at=runtime.started_at,
-            stopped_at=runtime.stopped_at,
-            needs_restart=runtime.needs_restart,
-        )
+        return self._to_status(workspace, runtime)
 
-    def _save_error(self, db: Session, runtime: models.WorkspaceRuntime, error: str) -> RuntimeStatus:
+    def _save_error(
+        self,
+        db: Session,
+        workspace: models.Workspace,
+        runtime: models.WorkspaceRuntime,
+        error: str,
+    ) -> RuntimeStatus:
         runtime.state = RUNTIME_STATE_ERROR if not isinstance(self.controller, NullController) else RUNTIME_STATE_STOPPED
         runtime.last_error = error
         db.add(runtime)
         db.commit()
         db.refresh(runtime)
+        return self._to_status(workspace, runtime)
+
+    def _to_status(self, workspace: models.Workspace, runtime: models.WorkspaceRuntime) -> RuntimeStatus:
+        runtime_root = self.settings.runtime_state_root / "nanobot" / str(workspace.id)
+        workspace_path = Path(workspace.host_path) / "workspace"
         return RuntimeStatus(
             state=runtime.state,
             scope=runtime.scope,
@@ -138,6 +143,8 @@ class NativeGatewayManager(GatewayManager):
             unit_name=runtime.unit_name,
             process_id=runtime.process_id,
             listen_port=runtime.listen_port,
+            config_path=str(runtime_root / "config.json"),
+            workspace_path=str(workspace_path),
             last_error=runtime.last_error,
             started_at=runtime.started_at,
             stopped_at=runtime.stopped_at,

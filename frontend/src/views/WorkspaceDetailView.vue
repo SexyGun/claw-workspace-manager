@@ -11,7 +11,10 @@
               <n-tag :type="summary.workspace.workspace_type === 'openclaw' ? 'info' : 'success'">
                 {{ summary.workspace.workspace_type }}
               </n-tag>
-              <n-tag :type="runtimeTagType">{{ runtimeStatus?.state ?? 'unknown' }}</n-tag>
+              <n-tag v-if="isBaseWorkspace" :type="activationTagType">
+                {{ summary.workspace.activation_state ?? 'inactive' }}
+              </n-tag>
+              <n-tag v-else :type="runtimeTagType">{{ runtimeStatus?.state ?? 'unknown' }}</n-tag>
             </n-space>
             <div class="path-text">
               <n-text depth="3">{{ summary.workspace.host_path }}</n-text>
@@ -21,9 +24,9 @@
             <n-input v-model:value="workspaceNameInput" placeholder="请输入工作区名称" />
             <n-button type="primary" @click="handleRename">重命名工作区</n-button>
             <n-space v-if="isBaseWorkspace">
-              <n-button secondary @click="handleWorkspaceRuntimeAction('start')">启动</n-button>
+              <n-button secondary @click="handleWorkspaceRuntimeAction('start')">激活</n-button>
               <n-button secondary @click="handleWorkspaceRuntimeAction('restart')">重启</n-button>
-              <n-button tertiary @click="handleWorkspaceRuntimeAction('stop')">停止</n-button>
+              <n-button tertiary @click="handleWorkspaceRuntimeAction('stop')">停用</n-button>
               <n-button quaternary @click="refreshSummary">刷新</n-button>
             </n-space>
             <n-button v-else quaternary @click="refreshSummary">刷新</n-button>
@@ -41,6 +44,14 @@
                 </div>
               </template>
               <n-space vertical size="large">
+                <n-alert
+                  v-for="warning in summary.nanobot_config?.warnings || []"
+                  :key="warning"
+                  type="warning"
+                  :show-icon="false"
+                >
+                  {{ warning }}
+                </n-alert>
                 <n-card
                   v-for="section in summary.nanobot_config?.schema.sections || []"
                   :key="section.key"
@@ -76,50 +87,7 @@
 
           <n-grid-item>
             <n-space vertical size="large">
-              <n-card title="Gateway 配置" class="panel-card">
-                <template #header-extra>
-                  <div class="card-path">
-                    <n-text depth="3">{{ summary.gateway_config?.rendered_path }}</n-text>
-                  </div>
-                </template>
-                <n-form :model="gatewayValues" label-placement="top">
-                  <n-grid cols="1 s:2" responsive="screen" :x-gap="12">
-                    <n-grid-item v-for="field in summary.gateway_config?.schema.fields || []" :key="field.key">
-                      <n-form-item :label="field.label">
-                        <n-switch
-                          v-if="field.type === 'boolean'"
-                          :value="gatewayBooleanValue(field.key)"
-                          :disabled="field.readonly"
-                          @update:value="updateGatewayBoolean(field.key, $event)"
-                        />
-                        <n-input-number
-                          v-else-if="field.type === 'number'"
-                          :value="gatewayNumberValue(field.key)"
-                          :disabled="field.readonly"
-                          @update:value="updateGatewayNumber(field.key, $event)"
-                          style="width: 100%"
-                        />
-                        <n-select
-                          v-else-if="field.type === 'select'"
-                          :value="gatewayTextValue(field.key)"
-                          :disabled="field.readonly"
-                          @update:value="updateGatewayText(field.key, $event)"
-                          :options="field.options?.map((value) => ({ label: value, value }))"
-                        />
-                        <n-input
-                          v-else
-                          :value="gatewayTextValue(field.key)"
-                          :disabled="field.readonly"
-                          @update:value="updateGatewayText(field.key, $event)"
-                        />
-                      </n-form-item>
-                    </n-grid-item>
-                  </n-grid>
-                  <n-button type="primary" :loading="savingGateway" @click="handleSaveGateway">保存 Gateway 配置</n-button>
-                </n-form>
-              </n-card>
-
-              <n-card title="工作区运行状态" class="panel-card">
+              <n-card title="实例运行状态" class="panel-card">
                 <runtime-status-card :status="summary.runtime_status" />
               </n-card>
             </n-space>
@@ -251,6 +219,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
 import {
+  NAlert,
   NButton,
   NCard,
   NDescriptions,
@@ -278,7 +247,6 @@ import {
   getErrorMessage,
   restartOpenClawService,
   restartWorkspaceRuntime,
-  saveGatewayConfig,
   saveNanobotConfig,
   saveOpenClawChannelConfig,
   saveOpenClawConfig,
@@ -313,6 +281,8 @@ const RuntimeStatusCard = defineComponent({
             h(NDescriptionsItem, { label: 'Unit' }, { default: () => props.status?.unit_name ?? '-' }),
             h(NDescriptionsItem, { label: 'PID' }, { default: () => props.status?.process_id ?? '-' }),
             h(NDescriptionsItem, { label: '监听端口' }, { default: () => props.status?.listen_port ?? '-' }),
+            h(NDescriptionsItem, { label: '配置文件' }, { default: () => props.status?.config_path ?? '-' }),
+            h(NDescriptionsItem, { label: '工作区目录' }, { default: () => props.status?.workspace_path ?? '-' }),
             h(NDescriptionsItem, { label: '需要重启' }, { default: () => (props.status?.needs_restart ? 'true' : 'false') }),
             h(NDescriptionsItem, { label: '启动时间' }, { default: () => props.status?.started_at ?? '-' }),
             h(NDescriptionsItem, { label: '停止时间' }, { default: () => props.status?.stopped_at ?? '-' }),
@@ -331,19 +301,27 @@ const workspaceId = computed(() => Number(route.params.id))
 const summary = ref<WorkspaceSummary | null>(null)
 const workspaceNameInput = ref('')
 const savingNanobot = ref(false)
-const savingGateway = ref(false)
 const savingOpenClaw = ref(false)
 const savingOpenClawChannel = ref(false)
 const openclawRawJson = ref('')
 
 const nanobotValues = reactive<Record<string, Record<string, unknown>>>({})
-const gatewayValues = reactive<Record<string, unknown>>({})
 const openclawValues = reactive<Record<string, unknown>>({})
 const openclawChannelValues = reactive<Record<string, unknown>>({})
 
 const isBaseWorkspace = computed(() => summary.value?.workspace.workspace_type === 'base')
 const workspaceName = computed(() => summary.value?.workspace.name ?? '')
 const runtimeStatus = computed(() => summary.value?.runtime_status ?? null)
+const activationTagType = computed(() => {
+  switch (summary.value?.workspace.activation_state) {
+    case 'active':
+      return 'success'
+    case 'error':
+      return 'error'
+    default:
+      return 'default'
+  }
+})
 const runtimeTagType = computed(() => {
   switch (runtimeStatus.value?.state) {
     case 'running':
@@ -386,32 +364,6 @@ function updateChannelText(section: string, field: string, value: string) {
     nanobotValues[section] = {}
   }
   nanobotValues[section][field] = value
-}
-
-function gatewayBooleanValue(field: string) {
-  return Boolean(gatewayValues[field])
-}
-
-function gatewayNumberValue(field: string) {
-  const value = gatewayValues[field]
-  return typeof value === 'number' ? value : null
-}
-
-function gatewayTextValue(field: string) {
-  const value = gatewayValues[field]
-  return typeof value === 'string' ? value : null
-}
-
-function updateGatewayBoolean(field: string, value: boolean) {
-  gatewayValues[field] = value
-}
-
-function updateGatewayNumber(field: string, value: number | null) {
-  gatewayValues[field] = value ?? 0
-}
-
-function updateGatewayText(field: string, value: string | null) {
-  gatewayValues[field] = value ?? ''
 }
 
 function openclawBooleanValue(field: string) {
@@ -469,11 +421,6 @@ function populateForms(nextSummary: WorkspaceSummary) {
     }
   }
 
-  resetObject(gatewayValues)
-  if (nextSummary.gateway_config) {
-    Object.assign(gatewayValues, nextSummary.gateway_config.values)
-  }
-
   resetObject(openclawValues)
   if (nextSummary.openclaw_config) {
     Object.assign(openclawValues, nextSummary.openclaw_config.values)
@@ -521,19 +468,6 @@ async function handleSaveNanobot() {
   }
 }
 
-async function handleSaveGateway() {
-  savingGateway.value = true
-  try {
-    await saveGatewayConfig(workspaceId.value, gatewayValues)
-    message.success('Gateway 配置已保存')
-    await refreshSummary()
-  } catch (error) {
-    message.error(getErrorMessage(error))
-  } finally {
-    savingGateway.value = false
-  }
-}
-
 async function handleSaveOpenClaw() {
   savingOpenClaw.value = true
   try {
@@ -569,7 +503,7 @@ async function handleWorkspaceRuntimeAction(action: 'start' | 'restart' | 'stop'
     } else {
       await stopWorkspaceRuntime(workspaceId.value)
     }
-    message.success(action === 'start' ? '已发送启动命令' : action === 'restart' ? '已发送重启命令' : '已发送停止命令')
+    message.success(action === 'start' ? '已发送激活命令' : action === 'restart' ? '已发送重启命令' : '已发送停用命令')
     await refreshSummary()
   } catch (error) {
     message.error(getErrorMessage(error))

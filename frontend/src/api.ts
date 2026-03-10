@@ -92,11 +92,6 @@ export async function saveNanobotConfig(workspaceId: number, values: Record<stri
   return response.data
 }
 
-export async function saveGatewayConfig(workspaceId: number, values: Record<string, unknown>): Promise<WorkspaceConfigRead> {
-  const response = await api.put<WorkspaceConfigRead>(`/workspaces/${workspaceId}/gateway-config`, { values })
-  return response.data
-}
-
 export async function fetchWorkspaceRuntime(workspaceId: number): Promise<RuntimeStatus> {
   const response = await api.get<RuntimeStatus>(`/workspaces/${workspaceId}/runtime`)
   return response.data

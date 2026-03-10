@@ -21,6 +21,8 @@ def serialize_runtime_status(runtime: RuntimeStatus) -> RuntimeStatusResponse:
         unit_name=runtime.unit_name,
         process_id=runtime.process_id,
         listen_port=runtime.listen_port,
+        config_path=runtime.config_path,
+        workspace_path=runtime.workspace_path,
         last_error=runtime.last_error,
         started_at=runtime.started_at,
         stopped_at=runtime.stopped_at,

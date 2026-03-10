@@ -35,7 +35,7 @@ SUDO_BIN="${SUDO_BIN:-$(command -v sudo || true)}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || true)}"
 NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 OPENCLAW_BIN="${OPENCLAW_BIN:-/usr/local/bin/openclaw}"
-NANOBOT_GATEWAY_BIN="${NANOBOT_GATEWAY_BIN:-/usr/local/bin/nanobot-gateway}"
+NANOBOT_BIN="${NANOBOT_BIN:-/usr/local/bin/nanobot}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-}"
 PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:-}"
 PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
@@ -356,9 +356,9 @@ After=network.target
 Type=simple
 User=$APP_USER
 Group=$APP_GROUP
-Environment=NANOBOT_GATEWAY_BIN=$NANOBOT_GATEWAY_BIN
-Environment=CLAW_RUNTIME_ROOT=$RUNTIME_STATE_ROOT_DEFAULT
-ExecStart=/bin/sh -lc '"\$NANOBOT_GATEWAY_BIN" --config "\$CLAW_RUNTIME_ROOT/nanobot/%i/gateway.yaml"'
+Environment=NANOBOT_BIN=$NANOBOT_BIN
+EnvironmentFile=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i/runtime.env
+ExecStart=/bin/sh -lc '"\$NANOBOT_BIN" gateway --config "\$NANOBOT_CONFIG_PATH" --port "\$NANOBOT_PORT"'
 Restart=on-failure
 RestartSec=3
 WorkingDirectory=$RUNTIME_STATE_ROOT_DEFAULT/nanobot/%i
@@ -417,8 +417,8 @@ print_summary() {
   if [ ! -x "$OPENCLAW_BIN" ]; then
     warn "OpenClaw binary not found at $OPENCLAW_BIN; shared runtime unit will not start until you install it"
   fi
-  if [ ! -x "$NANOBOT_GATEWAY_BIN" ]; then
-    warn "Nanobot gateway binary not found at $NANOBOT_GATEWAY_BIN; workspace runtimes will not start until you install it"
+  if [ ! -x "$NANOBOT_BIN" ]; then
+    warn "Nanobot binary not found at $NANOBOT_BIN; workspace runtimes will not start until you install it"
   fi
 }
 

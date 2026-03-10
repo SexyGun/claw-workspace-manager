@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import json5
-import yaml
-
 from app.config import Settings
 from app.constants import MASKED_VALUE, SENSITIVE_CHANNEL_FIELDS
 
@@ -24,7 +22,6 @@ CHANNEL_SCHEMA: dict[str, Any] = {
                 {"key": "enabled", "label": "Enabled", "type": "boolean"},
                 {"key": "app_id", "label": "App ID", "type": "text"},
                 {"key": "app_secret", "label": "App Secret", "type": "password", "sensitive": True},
-                {"key": "webhook", "label": "Webhook", "type": "text", "sensitive": True},
             ],
         },
         {
@@ -32,10 +29,8 @@ CHANNEL_SCHEMA: dict[str, Any] = {
             "title": "DingTalk",
             "fields": [
                 {"key": "enabled", "label": "Enabled", "type": "boolean"},
-                {"key": "app_key", "label": "App Key", "type": "text"},
-                {"key": "app_secret", "label": "App Secret", "type": "password", "sensitive": True},
-                {"key": "robot_code", "label": "Robot Code", "type": "text"},
-                {"key": "webhook", "label": "Webhook", "type": "text", "sensitive": True},
+                {"key": "client_id", "label": "Client ID", "type": "text"},
+                {"key": "client_secret", "label": "Client Secret", "type": "password", "sensitive": True},
             ],
         },
         {
@@ -43,9 +38,8 @@ CHANNEL_SCHEMA: dict[str, Any] = {
             "title": "QQ",
             "fields": [
                 {"key": "enabled", "label": "Enabled", "type": "boolean"},
-                {"key": "bot_uin", "label": "Bot UIN", "type": "text"},
-                {"key": "token", "label": "Token", "type": "password", "sensitive": True},
-                {"key": "websocket_url", "label": "WebSocket URL", "type": "text"},
+                {"key": "app_id", "label": "App ID", "type": "text"},
+                {"key": "secret", "label": "Secret", "type": "password", "sensitive": True},
             ],
         },
     ],
@@ -111,23 +105,27 @@ OPENCLAW_CHANNEL_SCHEMA: dict[str, Any] = {
 }
 
 OPENCLAW_FALLBACK_SEPARATOR = ","
+QQ_LEGACY_MIGRATION_WARNING = "QQ legacy config could not be migrated automatically; re-enter App ID and Secret."
+
+NANOBOT_LEGACY_CHANNEL_FIELDS: dict[str, set[str]] = {
+    "feishu": {"webhook"},
+    "dingtalk": {"app_key", "app_secret", "robot_code", "webhook"},
+    "qq": {"bot_uin", "token", "websocket_url"},
+}
 
 
 def default_channel_config() -> dict[str, Any]:
     return {
-        "feishu": {"enabled": False, "app_id": "", "app_secret": "", "webhook": ""},
-        "dingtalk": {"enabled": False, "app_key": "", "app_secret": "", "robot_code": "", "webhook": ""},
-        "qq": {"enabled": False, "bot_uin": "", "token": "", "websocket_url": ""},
+        "feishu": {"enabled": False, "app_id": "", "app_secret": ""},
+        "dingtalk": {"enabled": False, "client_id": "", "client_secret": ""},
+        "qq": {"enabled": False, "app_id": "", "secret": ""},
     }
 
 
 def default_gateway_config() -> dict[str, Any]:
     return {
-        "enabled": True,
         "listen_host": "127.0.0.1",
         "listen_port": 18080,
-        "default_channel": "feishu",
-        "log_level": "info",
     }
 
 
@@ -156,6 +154,60 @@ def default_openclaw_binding_config() -> dict[str, Any]:
     return {
         "enabled": False,
         "channel": "feishu",
+    }
+
+
+def default_nanobot_instance_config() -> dict[str, Any]:
+    return {
+        "agents": {
+            "defaults": {
+                "workspace": "~/.nanobot/workspace",
+                "model": "anthropic/claude-opus-4-5",
+                "provider": "auto",
+                "max_tokens": 8192,
+                "temperature": 0.1,
+                "max_tool_iterations": 40,
+                "memory_window": 100,
+                "reasoning_effort": None,
+            }
+        },
+        "channels": {
+            "send_progress": True,
+            "send_tool_hints": False,
+            "feishu": {
+                "enabled": False,
+                "app_id": "",
+                "app_secret": "",
+                "encrypt_key": "",
+                "verification_token": "",
+                "allow_from": [],
+                "react_emoji": "THUMBSUP",
+            },
+            "dingtalk": {
+                "enabled": False,
+                "client_id": "",
+                "client_secret": "",
+                "allow_from": [],
+            },
+            "qq": {
+                "enabled": False,
+                "app_id": "",
+                "secret": "",
+                "allow_from": [],
+            },
+        },
+        "providers": {},
+        "gateway": {
+            "host": "0.0.0.0",
+            "port": 18790,
+            "heartbeat": {"enabled": True, "interval_s": 1800},
+        },
+        "tools": {
+            "web": {"proxy": None, "search": {"api_key": "", "max_results": 5}},
+            "exec": {"timeout": 60, "path_append": ""},
+            "restrict_to_workspace": False,
+            "mcp_servers": {},
+        },
     }
 
 
@@ -190,11 +242,60 @@ def set_nested_value(data: dict[str, Any], path: Iterable[str], value: Any) -> N
     current[path_list[-1]] = value
 
 
+def _string_value(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _section_dict(values: dict[str, Any], key: str) -> dict[str, Any]:
+    section = values.get(key, {})
+    return section if isinstance(section, dict) else {}
+
+
+def normalize_channel_config(values: dict[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
+    normalized = copy.deepcopy(default_channel_config())
+    warnings: list[str] = []
+    values = values or {}
+
+    feishu = _section_dict(values, "feishu")
+    normalized["feishu"].update(
+        {
+            "enabled": bool(feishu.get("enabled", False)),
+            "app_id": _string_value(feishu.get("app_id")),
+            "app_secret": _string_value(feishu.get("app_secret")),
+        }
+    )
+
+    dingtalk = _section_dict(values, "dingtalk")
+    normalized["dingtalk"].update(
+        {
+            "enabled": bool(dingtalk.get("enabled", False)),
+            "client_id": _string_value(dingtalk.get("client_id") or dingtalk.get("app_key")),
+            "client_secret": _string_value(dingtalk.get("client_secret") or dingtalk.get("app_secret")),
+        }
+    )
+
+    qq = _section_dict(values, "qq")
+    has_legacy_qq = any(_string_value(qq.get(key)) for key in NANOBOT_LEGACY_CHANNEL_FIELDS["qq"])
+    normalized["qq"].update(
+        {
+            "enabled": bool(qq.get("enabled", False)),
+            "app_id": _string_value(qq.get("app_id")),
+            "secret": _string_value(qq.get("secret")),
+        }
+    )
+    if has_legacy_qq and not (normalized["qq"]["app_id"] or normalized["qq"]["secret"]):
+        warnings.append(QQ_LEGACY_MIGRATION_WARNING)
+
+    return normalized, warnings
+
+
+def channel_config_warnings(values: dict[str, Any] | None) -> list[str]:
+    _, warnings = normalize_channel_config(values)
+    return warnings
+
+
 def merge_channel_config(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    merged = copy.deepcopy(default_channel_config())
-    existing = existing or {}
-    for section in merged:
-        merged[section].update(existing.get(section, {}))
+    merged, _ = normalize_channel_config(existing)
     for section in CHANNEL_SCHEMA["sections"]:
         section_key = section["key"]
         input_section = incoming.get(section_key, {})
@@ -245,7 +346,7 @@ def merge_openclaw_binding_config(existing: dict[str, Any], incoming: dict[str, 
 
 
 def mask_channel_config(values: dict[str, Any]) -> dict[str, Any]:
-    masked = copy.deepcopy(values or default_channel_config())
+    masked, _ = normalize_channel_config(values)
     for section_key, section_values in masked.items():
         for field_key in list(section_values.keys()):
             if (section_key, field_key) in SENSITIVE_CHANNEL_FIELDS and section_values[field_key]:
@@ -261,26 +362,24 @@ def mask_openclaw_channel_config(values: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_channel_config(values: dict[str, Any]) -> dict[str, Any]:
-    merged = merge_channel_config({}, values)
+    merged, _ = normalize_channel_config(values)
     for section in CHANNEL_SCHEMA["sections"]:
         section_key = section["key"]
         for field in section["fields"]:
             value = merged[section_key][field["key"]]
             if field["type"] == "boolean" and not isinstance(value, bool):
                 raise ValueError(f"{section_key}.{field['key']} must be boolean")
+            if field["type"] in {"text", "password"} and not isinstance(value, str):
+                raise ValueError(f"{section_key}.{field['key']} must be string")
     return merged
 
 
 def validate_gateway_config(values: dict[str, Any]) -> dict[str, Any]:
     merged = merge_gateway_config({}, values)
-    if not isinstance(merged["enabled"], bool):
-        raise ValueError("enabled must be boolean")
+    if not isinstance(merged["listen_host"], str):
+        raise ValueError("listen_host must be string")
     if not isinstance(merged["listen_port"], int):
         raise ValueError("listen_port must be integer")
-    if merged["default_channel"] not in {"feishu", "dingtalk", "qq"}:
-        raise ValueError("default_channel must be one of feishu, dingtalk, qq")
-    if merged["log_level"] not in {"debug", "info", "warning", "error"}:
-        raise ValueError("log_level must be a supported level")
     return merged
 
 
@@ -425,31 +524,51 @@ def openclaw_raw_json(values: dict[str, Any]) -> str:
     return json.dumps(validate_openclaw_config(values or {}), indent=2, ensure_ascii=False) + "\n"
 
 
-def render_nanobot_payload(workspace_name: str, workspace_slug: str, channel_config: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "workspace": {"name": workspace_name, "slug": workspace_slug},
-        "channels": channel_config,
-    }
+def load_nanobot_instance_config(file_path: Path) -> dict[str, Any]:
+    if not file_path.exists():
+        return default_nanobot_instance_config()
+    try:
+        raw_values = json.loads(file_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid nanobot config json: {exc}") from exc
+    if not isinstance(raw_values, dict):
+        raise ValueError("nanobot config must be a JSON object")
+    return deep_merge(default_nanobot_instance_config(), raw_values)
 
 
-def render_gateway_payload(
-    workspace_id: int,
-    workspace_name: str,
-    gateway_config: dict[str, Any],
-    nanobot_config_path: str,
+def render_nanobot_config_payload(
+    base_config: dict[str, Any],
+    channel_config: dict[str, Any],
+    workspace_path: str,
+    gateway_host: str,
+    gateway_port: int,
 ) -> dict[str, Any]:
-    return {
-        "workspace_id": workspace_id,
-        "workspace_name": workspace_name,
-        "enabled": gateway_config["enabled"],
-        "listen": {
-            "host": gateway_config["listen_host"],
-            "port": gateway_config["listen_port"],
-        },
-        "default_channel": gateway_config["default_channel"],
-        "log_level": gateway_config["log_level"],
-        "nanobot_config": nanobot_config_path,
-    }
+    payload = deep_merge(default_nanobot_instance_config(), base_config or {})
+    normalized_channels = validate_channel_config(channel_config)
+    payload.setdefault("agents", {}).setdefault("defaults", {})
+    payload["agents"]["defaults"]["workspace"] = workspace_path
+    payload.setdefault("gateway", {})
+    payload["gateway"]["host"] = gateway_host
+    payload["gateway"]["port"] = gateway_port
+    payload["channels"] = render_nanobot_channels(
+        payload.get("channels", {}),
+        normalized_channels,
+    )
+    return payload
+
+
+def render_nanobot_channels(existing_channels: dict[str, Any], managed_channels: dict[str, Any]) -> dict[str, Any]:
+    channels = copy.deepcopy(existing_channels if isinstance(existing_channels, dict) else {})
+    channels.setdefault("send_progress", True)
+    channels.setdefault("send_tool_hints", False)
+    for section_key, values in managed_channels.items():
+        current = channels.get(section_key, {})
+        current = copy.deepcopy(current if isinstance(current, dict) else {})
+        for legacy_key in NANOBOT_LEGACY_CHANNEL_FIELDS.get(section_key, set()):
+            current.pop(legacy_key, None)
+        current.update(values)
+        channels[section_key] = current
+    return channels
 
 
 def render_openclaw_workspace_payload(openclaw_config: dict[str, Any]) -> dict[str, Any]:
@@ -526,9 +645,10 @@ def write_nanobot_config(file_path: Path, payload: dict[str, Any]) -> datetime:
     return datetime.now(timezone.utc)
 
 
-def write_gateway_config(file_path: Path, payload: dict[str, Any]) -> datetime:
+def write_runtime_env(file_path: Path, payload: dict[str, str | int]) -> datetime:
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    file_path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=False), encoding="utf-8")
+    lines = [f"{key}={value}" for key, value in payload.items()]
+    file_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return datetime.now(timezone.utc)
 
 

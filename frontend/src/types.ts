@@ -21,6 +21,7 @@ export interface Workspace {
   host_path: string
   template_version: string
   status: string
+   activation_state: 'active' | 'inactive' | 'error' | null
   created_at: string
 }
 
@@ -57,6 +58,7 @@ export interface WorkspaceConfigRead<TSchema = ChannelSchema | FlatSchema, TValu
   values: TValue
   rendered_path: string
   rendered_at: string | null
+  warnings: string[]
 }
 
 export interface OpenClawConfigRead extends WorkspaceConfigRead<FlatSchema> {
@@ -70,6 +72,8 @@ export interface RuntimeStatus {
   unit_name: string | null
   process_id: number | null
   listen_port: number | null
+  config_path: string | null
+  workspace_path: string | null
   last_error: string | null
   started_at: string | null
   stopped_at: string | null
@@ -86,7 +90,6 @@ export interface OpenClawRoute {
 export interface WorkspaceSummary {
   workspace: Workspace
   nanobot_config?: WorkspaceConfigRead<ChannelSchema> | null
-  gateway_config?: WorkspaceConfigRead<FlatSchema> | null
   runtime_status?: RuntimeStatus | null
   openclaw_config?: OpenClawConfigRead | null
   openclaw_channel_config?: WorkspaceConfigRead<FlatSchema> | null

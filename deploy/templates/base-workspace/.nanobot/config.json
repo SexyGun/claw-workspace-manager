@@ -1,0 +1,16 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-sonnet-4-5",
+      "provider": "auto"
+    }
+  },
+  "providers": {
+    "custom": {
+      "api_base": "http://localhost:8000/v1"
+    }
+  },
+  "tools": {
+    "restrict_to_workspace": true
+  }
+}

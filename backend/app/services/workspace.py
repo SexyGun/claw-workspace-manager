@@ -108,6 +108,7 @@ def create_workspace(
     try:
         if workspace_type == WORKSPACE_TYPE_BASE:
             (local_path / ".nanobot").mkdir(parents=True, exist_ok=True)
+            (local_path / "workspace").mkdir(parents=True, exist_ok=True)
         elif workspace_type == WORKSPACE_TYPE_OPENCLAW:
             (local_path / ".openclaw" / "workspace").mkdir(parents=True, exist_ok=True)
 

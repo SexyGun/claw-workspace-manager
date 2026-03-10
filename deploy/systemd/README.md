@@ -25,7 +25,7 @@ sudo bash deploy/install-native.sh
 
 ```bash
 sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
-  NANOBOT_GATEWAY_BIN=/opt/nanobot/bin/nanobot-gateway \
+  NANOBOT_BIN=/opt/nanobot/bin/nanobot \
   MANAGER_PORT=8080 \
   bash deploy/install-native.sh
 ```
@@ -38,7 +38,8 @@ sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
 - 工作区目录：`/srv/claw/workspaces/<owner_user_id>/<slug>`
 - 运行时目录：`/srv/claw/runtime`
 - OpenClaw 聚合配置：`/srv/claw/runtime/openclaw/openclaw.json`
-- Nanobot 单工作区配置：`/srv/claw/runtime/nanobot/<workspace_id>/gateway.yaml`
+- Nanobot 单工作区配置：`/srv/claw/runtime/nanobot/<workspace_id>/config.json`
+- Nanobot 单工作区环境文件：`/srv/claw/runtime/nanobot/<workspace_id>/runtime.env`
 
 ## 手工调整
 
@@ -62,5 +63,5 @@ sudo systemctl restart claw-manager.service
 ## 注意
 
 - OpenClaw 采用单共享服务，多 workspace 通过聚合配置里的 `agents.list` 和 `bindings` 生效。
-- Nanobot 采用每工作区一个实例，端口由管理器分配并写入运行时目录。
+- Nanobot 采用每工作区一个原生实例，`systemd` 通过实例目录内的 `runtime.env` 启动 `nanobot gateway --config ...`。
 - 一键部署脚本只负责安装管理器，不负责下载 OpenClaw / Nanobot 二进制本身。

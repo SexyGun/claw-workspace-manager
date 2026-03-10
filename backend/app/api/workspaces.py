@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -59,6 +60,8 @@ def serialize_runtime_status(runtime: RuntimeStatus) -> RuntimeStatusResponse:
         unit_name=runtime.unit_name,
         process_id=runtime.process_id,
         listen_port=runtime.listen_port,
+        config_path=runtime.config_path,
+        workspace_path=runtime.workspace_path,
         last_error=runtime.last_error,
         started_at=runtime.started_at,
         stopped_at=runtime.stopped_at,
@@ -76,10 +79,39 @@ def serialize_workspace_runtime(runtime: models.WorkspaceRuntime | None) -> Runt
         unit_name=runtime.unit_name,
         process_id=runtime.process_id,
         listen_port=runtime.listen_port,
+        config_path=None,
+        workspace_path=None,
         last_error=runtime.last_error,
         started_at=runtime.started_at,
         stopped_at=runtime.stopped_at,
         needs_restart=runtime.needs_restart,
+    )
+
+
+def workspace_activation_state(runtime: models.WorkspaceRuntime | None) -> str | None:
+    if runtime is None:
+        return None
+    if runtime.state == "error":
+        return "error"
+    if runtime.state in {"running", "starting", "stopping"}:
+        return "active"
+    return "inactive"
+
+
+def serialize_workspace(workspace: models.Workspace) -> WorkspaceRead:
+    return WorkspaceRead.model_validate(
+        {
+            "id": workspace.id,
+            "owner_user_id": workspace.owner_user_id,
+            "name": workspace.name,
+            "slug": workspace.slug,
+            "workspace_type": workspace.workspace_type,
+            "host_path": workspace.host_path,
+            "template_version": workspace.template_version,
+            "status": workspace.status,
+            "activation_state": workspace_activation_state(workspace.runtime),
+            "created_at": workspace.created_at,
+        }
     )
 
 
@@ -90,16 +122,7 @@ def serialize_nanobot_config(workspace: models.Workspace, settings: Settings) ->
         values=config_renderer.mask_channel_config(workspace.config.channel_config_json),
         rendered_path=str(local_path / ".nanobot" / "config.json"),
         rendered_at=workspace.config.nanobot_rendered_at,
-    )
-
-
-def serialize_gateway_config(workspace: models.Workspace, settings: Settings) -> WorkspaceConfigRead:
-    local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
-    return WorkspaceConfigRead(
-        schema=config_renderer.GATEWAY_SCHEMA,
-        values=workspace.config.gateway_config_json or config_renderer.default_gateway_config(),
-        rendered_path=str(local_path / ".nanobot" / "gateway.yaml"),
-        rendered_at=workspace.config.gateway_rendered_at,
+        warnings=config_renderer.channel_config_warnings(workspace.config.channel_config_json),
     )
 
 
@@ -148,6 +171,8 @@ def serialize_openclaw_route_runtime(workspace: models.Workspace) -> RuntimeStat
         unit_name=None,
         process_id=None,
         listen_port=None,
+        config_path=None,
+        workspace_path=None,
         last_error=None,
         started_at=None,
         stopped_at=None,
@@ -215,28 +240,33 @@ def render_openclaw_service_artifacts(db: Session, settings: Settings) -> None:
 def render_workspace_artifacts(db: Session, workspace: models.Workspace, settings: Settings) -> None:
     local_path = workspace_service.local_path_from_host_path(settings, workspace.host_path)
     if workspace.workspace_type == WORKSPACE_TYPE_BASE:
-        nanobot_payload = config_renderer.render_nanobot_payload(
-            workspace.name,
-            workspace.slug,
-            workspace.config.channel_config_json or config_renderer.default_channel_config(),
-        )
         runtime_root = settings.runtime_state_root / "nanobot" / str(workspace.id)
+        workspace_path = str(Path(workspace.host_path) / "workspace")
+        source_config_path = local_path / ".nanobot" / "config.json"
+        gateway_config = config_renderer.validate_gateway_config(
+            workspace.config.gateway_config_json or config_renderer.default_gateway_config()
+        )
+        base_config = config_renderer.load_nanobot_instance_config(source_config_path)
+        nanobot_payload = config_renderer.render_nanobot_config_payload(
+            base_config,
+            workspace.config.channel_config_json or config_renderer.default_channel_config(),
+            workspace_path=workspace_path,
+            gateway_host=gateway_config["listen_host"],
+            gateway_port=gateway_config["listen_port"],
+        )
         workspace.config.nanobot_rendered_at = config_renderer.write_nanobot_config(
-            local_path / ".nanobot" / "config.json",
+            source_config_path,
             nanobot_payload,
         )
         config_renderer.write_nanobot_config(runtime_root / "config.json", nanobot_payload)
-        gateway_payload = config_renderer.render_gateway_payload(
-            workspace.id,
-            workspace.name,
-            workspace.config.gateway_config_json or config_renderer.default_gateway_config(),
-            str(runtime_root / "config.json"),
+        workspace.config.gateway_rendered_at = config_renderer.write_runtime_env(
+            runtime_root / "runtime.env",
+            {
+                "NANOBOT_CONFIG_PATH": runtime_root / "config.json",
+                "NANOBOT_WORKSPACE_PATH": workspace_path,
+                "NANOBOT_PORT": gateway_config["listen_port"],
+            },
         )
-        workspace.config.gateway_rendered_at = config_renderer.write_gateway_config(
-            local_path / ".nanobot" / "gateway.yaml",
-            gateway_payload,
-        )
-        config_renderer.write_gateway_config(runtime_root / "gateway.yaml", gateway_payload)
         db.add(workspace.config)
         db.commit()
     elif workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW:
@@ -251,6 +281,16 @@ def ensure_workspace_type(workspace: models.Workspace, expected_type: str, label
         )
 
 
+def mark_workspace_runtime_for_restart(db: Session, workspace: models.Workspace) -> None:
+    runtime = workspace.runtime
+    if runtime is None:
+        return
+    if runtime.state not in {"running", "starting", "stopping"}:
+        return
+    runtime.needs_restart = True
+    db.add(runtime)
+
+
 @workspace_type_router.get("/workspace-types", response_model=list[WorkspaceTypeRead])
 def list_workspace_types(settings: Settings = Depends(get_app_settings)) -> list[WorkspaceTypeRead]:
     profiles = get_workspace_profiles(settings).values()
@@ -262,11 +302,11 @@ def list_workspaces(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[WorkspaceRead]:
-    query = select(models.Workspace).order_by(models.Workspace.created_at.desc())
+    query = select(models.Workspace).options(selectinload(models.Workspace.runtime)).order_by(models.Workspace.created_at.desc())
     if current_user.role != "admin":
         query = query.where(models.Workspace.owner_user_id == current_user.id)
     workspaces = db.scalars(query).all()
-    return [WorkspaceRead.model_validate(workspace) for workspace in workspaces]
+    return [serialize_workspace(workspace) for workspace in workspaces]
 
 
 @router.post("", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
@@ -294,7 +334,9 @@ def create_workspace_api(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Workspace created but post-processing failed; partial data has been cleaned up.",
         ) from exc
-    return WorkspaceRead.model_validate(workspace)
+    workspace = load_workspace(db, workspace.id)
+    assert workspace is not None
+    return serialize_workspace(workspace)
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceSummary)
@@ -310,10 +352,9 @@ def get_workspace_api(
     workspace = load_workspace(db, workspace.id)
     assert workspace is not None
 
-    summary = WorkspaceSummary(workspace=WorkspaceRead.model_validate(workspace))
+    summary = WorkspaceSummary(workspace=serialize_workspace(workspace))
     if workspace.workspace_type == WORKSPACE_TYPE_BASE:
         summary.nanobot_config = serialize_nanobot_config(workspace, settings)
-        summary.gateway_config = serialize_gateway_config(workspace, settings)
         summary.runtime_status = serialize_runtime_status(gateway_manager.status(db, workspace))
     elif workspace.workspace_type == WORKSPACE_TYPE_OPENCLAW:
         summary.openclaw_config = serialize_openclaw_config(workspace, settings)
@@ -339,7 +380,7 @@ def update_workspace_api(
     db.add(workspace)
     db.commit()
     db.refresh(workspace)
-    return WorkspaceRead.model_validate(workspace)
+    return serialize_workspace(workspace)
 
 
 @router.get("/{workspace_id}/nanobot-config", response_model=WorkspaceConfigRead)
@@ -374,6 +415,7 @@ def put_nanobot_config_api(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     workspace.config.channel_config_json = merged
+    mark_workspace_runtime_for_restart(db, workspace)
     db.add(workspace.config)
     db.commit()
     render_workspace_artifacts(db, workspace, settings)
@@ -389,11 +431,10 @@ def get_gateway_config_api(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
 ) -> WorkspaceConfigRead:
-    workspace = get_workspace_for_user(workspace_id, current_user, db)
-    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "gateway")
-    workspace = load_workspace(db, workspace.id)
-    assert workspace is not None
-    return serialize_gateway_config(workspace, settings)
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="gateway.yaml mode has been removed; use the Nanobot native activation model instead",
+    )
 
 
 @router.put("/{workspace_id}/gateway-config", response_model=WorkspaceConfigRead)
@@ -404,24 +445,10 @@ def put_gateway_config_api(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_app_settings),
 ) -> WorkspaceConfigRead:
-    workspace = get_workspace_for_user(workspace_id, current_user, db)
-    ensure_workspace_type(workspace, WORKSPACE_TYPE_BASE, "gateway")
-    workspace = load_workspace(db, workspace.id)
-    assert workspace is not None
-    try:
-        merged = config_renderer.merge_gateway_config(workspace.config.gateway_config_json, payload.values)
-        merged["listen_host"] = workspace.config.gateway_config_json["listen_host"]
-        merged["listen_port"] = workspace.config.gateway_config_json["listen_port"]
-        config_renderer.validate_gateway_config(merged)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    workspace.config.gateway_config_json = merged
-    db.add(workspace.config)
-    db.commit()
-    render_workspace_artifacts(db, workspace, settings)
-    workspace = load_workspace(db, workspace.id)
-    assert workspace is not None
-    return serialize_gateway_config(workspace, settings)
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="gateway.yaml mode has been removed; use the Nanobot native activation model instead",
+    )
 
 
 @router.get("/{workspace_id}/openclaw-config", response_model=OpenClawConfigRead)

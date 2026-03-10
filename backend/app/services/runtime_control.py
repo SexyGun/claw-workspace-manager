@@ -25,6 +25,8 @@ class RuntimeStatus:
     unit_name: str | None = None
     process_id: int | None = None
     listen_port: int | None = None
+    config_path: str | None = None
+    workspace_path: str | None = None
     last_error: str | None = None
     started_at: datetime | None = None
     stopped_at: datetime | None = None

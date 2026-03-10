@@ -26,12 +26,12 @@ Claw 工作区管理器用于把“用户 / workspace / 运行时实例”这三
 当前已经支持的核心能力：
 
 - 创建基础 workspace 与 OpenClaw workspace
-- 按 workspace 渲染 `.nanobot/config.json`、`.nanobot/gateway.yaml`
+- 按 workspace 渲染 `.nanobot/config.json` 与运行时 `config.json` / `runtime.env`
 - 按 workspace 渲染 `.openclaw/openclaw.json` 与渠道配置
 - 聚合所有 OpenClaw workspace 为共享 `openclaw.json`
 - 通过 `systemd` 控制 Nanobot workspace 实例
 - 查看 OpenClaw 共享服务状态、workspace 路由状态与配置落盘路径
-- 在前端直接编辑 Nanobot、Gateway、OpenClaw agent、OpenClaw 渠道配置
+- 在前端直接编辑 Nanobot、OpenClaw agent、OpenClaw 渠道配置，并按“激活 / 停用”管理基础工作区实例
 
 ## 运行架构
 
@@ -45,8 +45,9 @@ Claw 工作区管理器用于把“用户 / workspace / 运行时实例”这三
 ### Nanobot
 
 - 每个基础 workspace 对应一个独立 Nanobot 运行实例
-- 管理器为每个 workspace 分配独立端口，并把运行时文件写到 `RUNTIME_STATE_ROOT/nanobot/<workspace_id>/`
-- 前端对 workspace runtime 的启动、停止、重启会映射到对应的 `systemd` 模板单元
+- 管理器为每个 workspace 分配独立端口，并把实例配置写到 `RUNTIME_STATE_ROOT/nanobot/<workspace_id>/config.json`
+- Nanobot 的运行时状态目录来自实例 config 所在目录；管理器同时生成 `runtime.env` 供 `systemd` 模板单元读取
+- 前端对基础 workspace 的“激活 / 停用 / 重启”会映射到对应的 `systemd` 模板单元
 
 ## 典型使用流程
 
@@ -120,7 +121,7 @@ sudo bash deploy/install-native.sh
 
 ```bash
 sudo OPENCLAW_BIN=/opt/openclaw/bin/openclaw \
-  NANOBOT_GATEWAY_BIN=/opt/nanobot/bin/nanobot-gateway \
+  NANOBOT_BIN=/opt/nanobot/bin/nanobot \
   MANAGER_PORT=8080 \
   bash deploy/install-native.sh
 ```

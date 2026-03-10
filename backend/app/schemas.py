@@ -79,6 +79,7 @@ class WorkspaceRead(BaseModel):
     host_path: str
     template_version: str
     status: str
+    activation_state: Optional[Literal["active", "inactive", "error"]] = None
     created_at: datetime
 
 
@@ -93,6 +94,7 @@ class WorkspaceConfigRead(BaseModel):
     values: dict[str, Any]
     rendered_path: str
     rendered_at: Optional[datetime] = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class OpenClawConfigPayload(BaseModel):
@@ -121,6 +123,8 @@ class RuntimeStatusResponse(BaseModel):
     unit_name: Optional[str] = None
     process_id: Optional[int] = None
     listen_port: Optional[int] = None
+    config_path: Optional[str] = None
+    workspace_path: Optional[str] = None
     last_error: Optional[str] = None
     started_at: Optional[datetime] = None
     stopped_at: Optional[datetime] = None
@@ -137,7 +141,6 @@ class OpenClawRouteRead(BaseModel):
 class WorkspaceSummary(BaseModel):
     workspace: WorkspaceRead
     nanobot_config: Optional[WorkspaceConfigRead] = None
-    gateway_config: Optional[WorkspaceConfigRead] = None
     runtime_status: Optional[RuntimeStatusResponse] = None
     openclaw_config: Optional[OpenClawConfigRead] = None
     openclaw_channel_config: Optional[WorkspaceConfigRead] = None

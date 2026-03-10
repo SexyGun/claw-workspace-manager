@@ -1,1 +1,1 @@
-This directory is reserved for generated nanobot and gateway configuration files.
+This directory is reserved for the managed Nanobot instance config.

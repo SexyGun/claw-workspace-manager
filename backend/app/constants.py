@@ -32,9 +32,7 @@ SHARED_RUNTIME_KEY_OPENCLAW = "openclaw"
 
 SENSITIVE_CHANNEL_FIELDS = {
     ("feishu", "app_secret"),
-    ("feishu", "webhook"),
-    ("dingtalk", "app_secret"),
-    ("dingtalk", "webhook"),
-    ("qq", "token"),
+    ("dingtalk", "client_secret"),
+    ("qq", "secret"),
     ("openclaw_feishu", "app_secret"),
 }

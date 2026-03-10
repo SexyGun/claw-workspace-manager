@@ -23,6 +23,27 @@ def app_env(tmp_path_factory) -> Iterator[dict[str, Path]]:
 
     base_templates.mkdir(parents=True, exist_ok=True)
     (base_templates / "README.md").write_text("base template", encoding="utf-8")
+    (base_templates / ".nanobot").mkdir(parents=True, exist_ok=True)
+    (base_templates / ".nanobot" / "config.json").write_text(
+        """{
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-sonnet-4-5",
+      "provider": "auto"
+    }
+  },
+  "providers": {
+    "custom": {
+      "api_base": "http://localhost:8000/v1"
+    }
+  },
+  "tools": {
+    "restrict_to_workspace": true
+  }
+}
+""",
+        encoding="utf-8",
+    )
 
     (openclaw_templates / ".openclaw" / "workspace").mkdir(parents=True, exist_ok=True)
     (openclaw_templates / ".openclaw" / "openclaw.json").write_text(

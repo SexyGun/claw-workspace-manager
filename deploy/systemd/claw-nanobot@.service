@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=claw-manager
 Group=claw-manager
-Environment=NANOBOT_GATEWAY_BIN=/usr/local/bin/nanobot-gateway
-Environment=CLAW_RUNTIME_ROOT=/srv/claw/runtime
-ExecStart=/bin/sh -lc '"$NANOBOT_GATEWAY_BIN" --config "$CLAW_RUNTIME_ROOT/nanobot/%i/gateway.yaml"'
+Environment=NANOBOT_BIN=/usr/local/bin/nanobot
+EnvironmentFile=/srv/claw/runtime/nanobot/%i/runtime.env
+ExecStart=/bin/sh -lc '"$NANOBOT_BIN" gateway --config "$NANOBOT_CONFIG_PATH" --port "$NANOBOT_PORT"'
 Restart=on-failure
 RestartSec=3
 WorkingDirectory=/srv/claw/runtime/nanobot/%i

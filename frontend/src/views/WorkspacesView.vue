@@ -18,9 +18,14 @@
             <n-card hoverable class="workspace-card">
               <n-space justify="space-between" align="center">
                 <n-tag type="warning" size="small">{{ workspace.status }}</n-tag>
-                <n-tag :type="workspace.workspace_type === 'openclaw' ? 'info' : 'success'" size="small">
-                  {{ workspace.workspace_type }}
-                </n-tag>
+                <n-space>
+                  <n-tag v-if="workspace.workspace_type === 'base'" :type="activationTagType(workspace.activation_state)" size="small">
+                    {{ workspace.activation_state ?? 'unknown' }}
+                  </n-tag>
+                  <n-tag :type="workspace.workspace_type === 'openclaw' ? 'info' : 'success'" size="small">
+                    {{ workspace.workspace_type }}
+                  </n-tag>
+                </n-space>
               </n-space>
               <h3>{{ workspace.name }}</h3>
               <p>{{ workspace.slug }}</p>
@@ -95,6 +100,17 @@ const workspaceTypeOptions = computed(() =>
 const selectedWorkspaceTypeDescription = computed(() => {
   return workspaceTypes.value.find((type) => type.key === form.workspace_type)?.description ?? ''
 })
+
+function activationTagType(value: Workspace['activation_state']) {
+  switch (value) {
+    case 'active':
+      return 'success'
+    case 'error':
+      return 'error'
+    default:
+      return 'default'
+  }
+}
 
 async function loadWorkspaceTypes() {
   try {

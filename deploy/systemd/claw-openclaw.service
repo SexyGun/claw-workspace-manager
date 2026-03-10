@@ -10,7 +10,7 @@ EnvironmentFile=/etc/claw-workspace-manager.env
 Environment=CLAW_RUNTIME_ROOT=/srv/claw/runtime
 Environment=OPENCLAW_CONFIG_PATH=/srv/claw/runtime/openclaw/openclaw.json
 ExecStart=/bin/sh -lc '"$OPENCLAW_BIN" gateway'
-ExecReload=/bin/kill -HUP $MAINPID
+ExecReload=/bin/kill -USR1 $MAINPID
 Restart=on-failure
 RestartSec=3
 WorkingDirectory=/srv/claw/runtime/openclaw
